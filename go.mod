@@ -1,8 +1,6 @@
 module github.com/xxzhwl/gaia
 
-go 1.23.0
-
-toolchain go1.23.1
+go 1.24.4
 
 require (
 	github.com/cloudwego/hertz v0.9.7
@@ -10,6 +8,8 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/hashicorp/consul/api v1.30.0
 	github.com/hertz-contrib/cors v0.1.0
+	github.com/hertz-contrib/sse v0.1.0
+	github.com/hertz-contrib/websocket v0.2.0
 	github.com/minio/minio-go/v7 v7.0.81
 	github.com/pkg/errors v0.9.1
 	github.com/redis/go-redis/extra/redisotel/v9 v9.7.1
@@ -61,8 +61,6 @@ require (
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/hashicorp/serf v0.10.1 // indirect
-	github.com/hertz-contrib/sse v0.1.0 // indirect
-	github.com/hertz-contrib/websocket v0.2.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect

@@ -6,6 +6,8 @@ package httpclient
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"encoding/pem"
 	"fmt"
 	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/framework/logImpl"
@@ -14,6 +16,7 @@ import (
 	otel "go.opentelemetry.io/otel/trace"
 	"io"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -69,6 +72,36 @@ func (h *HttpRequest) Post(data []byte) (respBody []byte, statusCode int, err er
 func (h *HttpRequest) Get() (respBody []byte, statusCode int, err error) {
 	h.Method = http.MethodGet
 	return h.Do()
+}
+
+func (h *HttpRequest) WithCAPem(filePath string) *HttpRequest {
+	b, _ := os.ReadFile(filePath)
+	pem.Decode(b)
+	var pemBlocks []*pem.Block
+	var v *pem.Block
+	var pkey []byte
+	for {
+		v, b = pem.Decode(b)
+		if v == nil {
+			break
+		}
+		if v.Type == "PRIVATE KEY" {
+			pkey = pem.EncodeToMemory(v)
+		} else {
+			pemBlocks = append(pemBlocks, v)
+		}
+	}
+
+	bt := pem.EncodeToMemory(pemBlocks[0])
+	//keyString := string(pkey)
+	//CertString := string(bytes)
+	//pool := x509.NewCertPool()
+	c, _ := tls.X509KeyPair(bt, pkey)
+	//pool.AppendCertsFromPEM(b)
+	cfg := &tls.Config{Certificates: []tls.Certificate{c}, InsecureSkipVerify: true}
+	tr := http.Transport{TLSClientConfig: cfg}
+	h.client.Transport = &tr
+	return h
 }
 
 func (h *HttpRequest) WithTitle(title string) *HttpRequest {
