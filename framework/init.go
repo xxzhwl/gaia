@@ -5,6 +5,8 @@ package framework
 
 import (
 	"context"
+	"time"
+
 	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/framework/httpclient"
 	"github.com/xxzhwl/gaia/framework/logImpl"
@@ -14,7 +16,6 @@ import (
 	"github.com/xxzhwl/gaia/framework/tracer"
 	"go.opentelemetry.io/otel"
 	"gorm.io/gorm/logger"
-	"time"
 )
 
 func Init() {
@@ -25,7 +26,7 @@ func Init() {
 	localLogger := logImpl.NewDefaultLogger().SetTitle("GaiaFramework")
 	gaia.LocalLogger = localLogger
 	gaia.NewLogger = logImpl.NewLogger
-	gaia.InfoF("注入LocalLogger:[showLoggerLevel:%s]", gaia.ShowLogLevel)
+	gaia.InfoF("注入LocalLogger:[showLoggerLevel:%s]", localLogger.ShowLoggerLevel)
 	gaia.Info("注入NewLogger方法")
 	//框架系统名称注入
 	gaia.SystemNameImplObj = system.GaiaSystem{}

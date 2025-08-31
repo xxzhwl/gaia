@@ -7,6 +7,8 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"time"
+
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/config"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
@@ -15,7 +17,6 @@ import (
 	"github.com/xxzhwl/gaia/framework/tracer"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"time"
 )
 
 func init() {
@@ -79,6 +80,17 @@ func NewApp(schema string) *Server {
 
 func DefaultApp() *Server {
 	return NewApp("")
+}
+
+func (s *Server) Run() {
+	routes := s.Routes()
+	routeFmt := "Method:%s RoutePath:%s ---> HandlerPath:%s\n"
+	routesInfo := "Registered Routes:\n"
+	for _, route := range routes {
+		routesInfo += fmt.Sprintf(routeFmt, route.Method, route.Path, route.Handler)
+	}
+	gaia.Info(routesInfo)
+	s.Spin()
 }
 
 func (s *Server) registerPlugin() {

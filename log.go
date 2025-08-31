@@ -5,11 +5,12 @@ package gaia
 
 import (
 	"fmt"
-	"github.com/xxzhwl/gaia/color"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/xxzhwl/gaia/color"
 )
 
 type LogLevel uint8

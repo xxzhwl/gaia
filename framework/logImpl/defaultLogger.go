@@ -6,11 +6,6 @@ package logImpl
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/xxzhwl/gaia"
-	"github.com/xxzhwl/gaia/color"
-	"github.com/xxzhwl/gaia/components/buffer"
-	"github.com/xxzhwl/gaia/components/es"
-	"github.com/xxzhwl/gaia/g"
 	"io"
 	"net/http"
 	"os"
@@ -18,6 +13,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/xxzhwl/gaia"
+	"github.com/xxzhwl/gaia/color"
+	"github.com/xxzhwl/gaia/components/buffer"
+	"github.com/xxzhwl/gaia/components/es"
+	"github.com/xxzhwl/gaia/g"
 )
 
 var logTimeFormat = "2006-01-02 15:04:05.000"
@@ -78,11 +79,11 @@ type DefaultLogger struct {
 
 	locker sync.RWMutex
 
-	showLoggerLevel gaia.LogLevel
+	ShowLoggerLevel gaia.LogLevel
 }
 
 func NewDefaultLogger() *DefaultLogger {
-	return &DefaultLogger{timeFormat: logTimeFormat, title: "Default", showLoggerLevel: gaia.LogInfoLevel}
+	return &DefaultLogger{timeFormat: logTimeFormat, title: "Default", ShowLoggerLevel: gaia.LogInfoLevel}
 }
 
 func NewLogger(title string) gaia.IBaseLog {
@@ -90,7 +91,7 @@ func NewLogger(title string) gaia.IBaseLog {
 }
 
 func (d *DefaultLogger) SetShowLoggerLevel(level gaia.LogLevel) {
-	d.showLoggerLevel = level
+	d.ShowLoggerLevel = level
 }
 
 func (d *DefaultLogger) SetTitle(title string) *DefaultLogger {
@@ -166,7 +167,7 @@ func (d *DefaultLogger) logLocalLogFile(logString string) {
 }
 
 func (d *DefaultLogger) Log(logLevel gaia.LogLevel, content string) {
-	if logLevel < d.showLoggerLevel {
+	if logLevel < d.ShowLoggerLevel {
 		return
 	}
 	traceStack := ""

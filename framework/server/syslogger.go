@@ -1,4 +1,4 @@
-// Package plugin 包注释
+// Package server 包注释
 // @author wanlizhan
 // @created 2025-04-09
 package server
@@ -6,9 +6,10 @@ package server
 import (
 	"context"
 	"fmt"
+	"io"
+
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"github.com/xxzhwl/gaia"
-	"io"
 )
 
 type ServerLogger struct {
