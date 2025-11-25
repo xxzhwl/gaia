@@ -12,16 +12,14 @@ import (
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/config"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
+	"github.com/cloudwego/hertz/pkg/route"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/framework/server/operateProxy"
 	"github.com/xxzhwl/gaia/framework/tracer"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 )
-
-func init() {
-	tracer.SetupTracer(context.Background(), "AsyncTask")
-}
 
 type Server struct {
 	*server.Hertz
@@ -32,13 +30,18 @@ func NewApp(schema string) *Server {
 	if schema == "" {
 		schema = "Server"
 	}
+
+	if _, err := tracer.SetupTracer(context.Background(), schema); err != nil {
+		gaia.Error("Failed to setup tracer: " + err.Error())
+	}
+
 	var configs []config.Option
 	host := gaia.GetSafeConfString(schema + ".Host")
 	port := gaia.GetSafeConfString(schema + ".Port")
 	configs = append(configs, server.WithHostPorts(host+":"+port))
 
 	gracefulExitTime := gaia.GetSafeConfInt64(schema + ".GracefulExitTime")
-	if (gracefulExitTime) > 0 {
+	if gracefulExitTime > 0 {
 		configs = append(configs, server.WithExitWaitTime(time.Duration(gracefulExitTime)*time.Second))
 	}
 	keepAliveTimeOut := gaia.GetSafeConfInt64(schema + ".KeepAliveTimeout")
@@ -65,7 +68,8 @@ func NewApp(schema string) *Server {
 		c := &tls.Config{}
 		pair, err := tls.LoadX509KeyPair(crtPath, keyPath)
 		if err != nil {
-			panic(err)
+			gaia.ErrorF("failed to load TLS certs: %v", err)
+			return nil
 		}
 		c.Certificates = append(c.Certificates, pair)
 		configs = append(configs, server.WithTLS(c))
@@ -82,15 +86,157 @@ func DefaultApp() *Server {
 	return NewApp("")
 }
 
+// Run 启动HTTP服务器并显示注册的路由信息
 func (s *Server) Run() {
 	routes := s.Routes()
-	routeFmt := "Method:%s RoutePath:%s ---> HandlerPath:%s\n"
-	routesInfo := "Registered Routes:\n"
-	for _, route := range routes {
-		routesInfo += fmt.Sprintf(routeFmt, route.Method, route.Path, route.Handler)
-	}
+
+	// 步骤1: 排序路由
+	s.sortRoutes(routes)
+
+	// 步骤2: 生成格式化的路由信息
+	routesInfo := s.formatRoutesInfo(routes)
+
+	// 步骤3: 打印路由信息
 	gaia.Info(routesInfo)
+
+	// 步骤4: 启动服务器
 	s.Spin()
+}
+
+// sortRoutes 按HTTP方法优先级和路径字母顺序排序路由
+func (s *Server) sortRoutes(routes route.RoutesInfo) {
+	// 定义HTTP方法优先级
+	methodPriority := map[string]int{
+		"GET":     1,
+		"POST":    2,
+		"PUT":     3,
+		"DELETE":  4,
+		"PATCH":   5,
+		"HEAD":    6,
+		"OPTIONS": 7,
+	}
+
+	// 冒泡排序实现
+	for i := 0; i < len(routes)-1; i++ {
+		for j := i + 1; j < len(routes); j++ {
+			if s.isRouteNeedSwap(routes[i], routes[j], methodPriority) {
+				routes[i], routes[j] = routes[j], routes[i]
+			}
+		}
+	}
+}
+
+// isRouteNeedSwap 判断两个路由是否需要交换位置
+func (s *Server) isRouteNeedSwap(route1, route2 route.RouteInfo, priorityMap map[string]int) bool {
+	iPrio := priorityMap[string(route1.Method)]
+	jPrio := priorityMap[string(route2.Method)]
+
+	// 设置默认优先级（未定义的方法放到最后）
+	if iPrio == 0 {
+		iPrio = 999
+	}
+	if jPrio == 0 {
+		jPrio = 999
+	}
+
+	// 优先按方法优先级排序，优先级相同时按路径字母顺序排序
+	return iPrio > jPrio || (iPrio == jPrio && string(route1.Path) > string(route2.Path))
+}
+
+// formatRoutesInfo 生成格式化的路由信息表格
+func (s *Server) formatRoutesInfo(routes route.RoutesInfo) string {
+	// 生成分隔线
+	dashLine := s.generateDashLine(80)
+
+	// 初始化结果字符串
+	result := "\n" + "=" + dashLine + "=\n"
+
+	// 添加居中标题
+	result += "|" + s.centerString("REGISTERED ROUTES ("+fmt.Sprintf("%d", len(routes))+")", 82) + "|\n"
+	result += "=" + dashLine + "=\n"
+
+	// 添加表头
+	result += "| METHOD   | PATH                                               | HANDLER |\n"
+	result += "=" + dashLine + "=\n"
+
+	// 添加每条路由信息
+	for _, route := range routes {
+		result += s.formatRoute(route)
+	}
+
+	// 添加底部分隔线
+	result += "=" + dashLine + "=\n"
+
+	return result
+}
+
+// generateDashLine 生成指定长度的虚线
+func (s *Server) generateDashLine(length int) string {
+	line := ""
+	for i := 0; i < length; i++ {
+		line += "-"
+	}
+	return line
+}
+
+// centerString 将字符串在指定宽度内居中显示
+func (s *Server) centerString(str string, width int) string {
+	padding := (width - len(str)) / 2
+	result := ""
+
+	// 添加左侧填充
+	for i := 0; i < padding; i++ {
+		result += " "
+	}
+
+	// 添加字符串内容
+	result += str
+
+	// 确保总长度符合要求
+	for len(result) < width {
+		result += " "
+	}
+
+	return result
+}
+
+// formatRoute 格式化单条路由信息
+func (s *Server) formatRoute(route route.RouteInfo) string {
+	method := string(route.Method)
+	path := string(route.Path)
+	handler := route.Handler
+
+	// 获取方法对应的颜色
+	color := s.getMethodColor(method)
+	resetColor := "\033[0m"
+	formattedMethod := color + method + resetColor
+
+	// 限制路径长度显示
+	if len(path) > 50 {
+		path = path[:47] + "..."
+	}
+
+	// 格式化输出
+	return fmt.Sprintf("| %-8s | %-50s | %s |\n", formattedMethod, path, handler)
+}
+
+// getMethodColor 获取HTTP方法对应的终端颜色代码
+func (s *Server) getMethodColor(method string) string {
+	colors := map[string]string{
+		"GET":     "\033[32m", // 绿色
+		"POST":    "\033[34m", // 蓝色
+		"PUT":     "\033[33m", // 黄色
+		"DELETE":  "\033[31m", // 红色
+		"PATCH":   "\033[35m", // 紫色
+		"HEAD":    "\033[36m", // 青色
+		"OPTIONS": "\033[37m", // 白色
+	}
+
+	if color, ok := colors[method]; ok {
+		return color
+	}
+	return ""
+	// 默认无颜色
 }
 
 func (s *Server) registerPlugin() {
@@ -101,6 +247,11 @@ func (s *Server) registerPlugin() {
 		gaia.Info("启用跨域")
 		s.Use(s.corsPlugin())
 	} //注册跨域插件
+
+	if gaia.GetSafeConfBool("pprof.Enable") {
+		gaia.Info("启用pprof")
+	}
+
 	gaia.Info("启用链路追踪")
 	s.Use(MakePlugin(tracePlugin)) //注册链路追踪插件
 
@@ -143,7 +294,6 @@ func buildSpanStartOptions(c Request) []trace.SpanStartOption {
 }
 
 func tracePlugin(arg Request) error {
-
 	traceName := fmt.Sprintf("%s-%s", string(arg.C().Method()), arg.C().FullPath())
 	tracerInstance := tracer.GetTracer()
 	if tracerInstance == nil {
@@ -154,7 +304,7 @@ func tracePlugin(arg Request) error {
 		}
 		tracerInstance = tracer.GetTracer()
 	}
-	parentCtx, span := tracerInstance.Start(context.Background(), traceName, buildSpanStartOptions(arg)...)
+	parentCtx, span := tracerInstance.Start(arg.TraceContext, traceName, buildSpanStartOptions(arg)...)
 
 	defer func() {
 		span.End()

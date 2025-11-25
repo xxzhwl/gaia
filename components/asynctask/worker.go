@@ -58,15 +58,20 @@ func (s *Scheduler) work() {
 }
 
 func (s *Scheduler) workerNeedExit() bool {
-	//小于10个不缩容
-	if atomic.LoadInt32(&s.statusInfo.AllWorkers) <= 10 {
-		return false
-	}
-	//如果当前任务队列任务数/当前空闲中的worker<1且上次运行时间超过10秒，就可以缩容了
 	s.lastRemoveWorkerRw.Lock()
 	defer s.lastRemoveWorkerRw.Unlock()
-	if int32(len(s.taskIdChan))/
-		(atomic.LoadInt32(&s.statusInfo.AllWorkers)-atomic.LoadInt32(&s.statusInfo.RunningWorkers)) < 1 {
+	
+	// 小于10个不缩容
+	allWorkers := atomic.LoadInt32(&s.statusInfo.AllWorkers)
+	runningWorkers := atomic.LoadInt32(&s.statusInfo.RunningWorkers)
+	
+	if allWorkers <= 10 {
+		return false
+	}
+	
+	// 如果当前任务队列任务数/当前空闲中的worker<1且上次运行时间超过10秒，就可以缩容了
+	idleWorkers := allWorkers - runningWorkers
+	if int32(len(s.taskIdChan)) < idleWorkers {
 		if v, ok := s.workerLastRunTime[gaia.GetGoRoutineId()]; ok {
 			if !v.Add(time.Second * 10).After(time.Now()) {
 				return true

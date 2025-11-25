@@ -7,12 +7,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
+	"time"
+
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"gorm.io/plugin/opentelemetry/tracing"
-	"sync"
-	"time"
 )
 
 // ConnsMaxLifeTime 设置连接可以被重用的最大时限
@@ -22,13 +23,36 @@ import (
 const ConnsMaxLifeTime = time.Second * 20
 
 // MaxIdleConns 设置连接池中允许存在的空闲连接数
-const MaxIdleConns = 2
+// 适当增加可以减少频繁创建连接的开销
+const MaxIdleConns = 10
 
 // MaxOpenConns 设置连接池最大允许打开的连接数
-const MaxOpenConns = 2000
+// 建议根据实际需求调整，一般根据数据库服务器性能和并发量设置
+const MaxOpenConns = 100
 
 // 最大重试次数
 const _maxMySqlRetries = 3
+
+// CloseAllConnections 关闭所有数据库连接
+// 在应用程序关闭时调用此方法清理资源
+func CloseAllConnections() error {
+	dbLocker.Lock()
+	defer dbLocker.Unlock()
+	
+	var lastErr error
+	for dsn, mysql := range dbConnPool {
+		db, err := mysql.db.DB()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if err := db.Close(); err != nil {
+			lastErr = err
+		}
+		delete(dbConnPool, dsn)
+	}
+	return lastErr
+}
 
 var dbConnPool = make(map[string]*Mysql)
 
@@ -75,10 +99,23 @@ func genConn(dsn string) error {
 	if dbLogger != nil {
 		conf.Logger = dbLogger
 	}
-	db, err := gorm.Open(mysql.Open(dsn), conf)
-	if err != nil {
-		return err
+	
+	// 添加重试机制
+	var db *gorm.DB
+	var err error
+	for i := 0; i < _maxMySqlRetries; i++ {
+		db, err = gorm.Open(mysql.Open(dsn), conf)
+		if err == nil {
+			break
+		}
+		if i < _maxMySqlRetries-1 {
+			time.Sleep(time.Second * time.Duration(i+1)) // 指数退避重试
+		}
 	}
+	if err != nil {
+		return fmt.Errorf("failed to connect to database after %d retries: %w", _maxMySqlRetries, err)
+	}
+	
 	if err = db.Use(tracing.NewPlugin()); err != nil {
 		return err
 	}
@@ -91,13 +128,18 @@ func genConn(dsn string) error {
 	dbConn.SetMaxIdleConns(MaxIdleConns)
 	dbConn.SetMaxOpenConns(MaxOpenConns)
 
-	setDb(dsn, &Mysql{db.Debug()})
+	// 根据环境决定是否启用调试模式
+	dbInstance := db
+	if GetSafeConfBool("Debug") {
+		dbInstance = db.Debug()
+	}
+	setDb(dsn, &Mysql{dbInstance})
 	return nil
 }
 
 func getDb(dsn string) *Mysql {
-	dbLocker.Lock()
-	defer dbLocker.Unlock()
+	dbLocker.RLock() // 使用读锁替代写锁，提高并发性能
+	defer dbLocker.RUnlock()
 	if v, ok := dbConnPool[dsn]; ok {
 		return v
 	}
@@ -153,10 +195,11 @@ func (m *Mysql) GetGormDb() *gorm.DB {
 }
 
 func (m *Mysql) ExecCommand(command string, args ...any) ([]map[string]string, error) {
-	tx := m.db.Raw(fmt.Sprintf(command, args...))
+	// 使用GORM的参数化查询避免SQL注入
+	tx := m.db.Raw(command, args...)
 	rows, err := tx.Rows()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to execute SQL: %w", err)
 	}
 	if rows == nil {
 		return nil, errors.New("rows nil")

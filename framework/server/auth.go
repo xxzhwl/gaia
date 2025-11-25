@@ -11,12 +11,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/xxzhwl/gaia"
 	"hash"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/xxzhwl/gaia"
 )
 
 type SysAuthModel struct {
@@ -63,12 +64,17 @@ func resolveAuth(auth, path, method string) error {
 		return errors.New("签名校验失败")
 	}
 
-	//时间戳校验两分钟以内的
+	// 使用配置而不是硬编码时间
+	var allowedTimeWindow = gaia.GetSafeConfInt64("Auth.AllowedTimeWindow")
+	if allowedTimeWindow == 0 {
+		allowedTimeWindow = 60 // 默认1分钟
+	}
+	
 	reqTimeStamp, err := strconv.Atoi(reqTimeStampStr)
 	if err != nil {
 		return errors.New("签名校验失败")
 	}
-	if currentTimeStamp-int64(reqTimeStamp) > 60*2 {
+	if currentTimeStamp-int64(reqTimeStamp) > allowedTimeWindow {
 		return errors.New("签名已过期")
 	}
 	res := false

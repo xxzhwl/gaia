@@ -7,14 +7,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"time"
+
 	"github.com/cloudwego/hertz/pkg/app"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/errwrap"
 	"github.com/xxzhwl/gaia/framework/tracer"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-	"net/http"
-	"time"
 )
 
 const (
@@ -33,7 +35,13 @@ type Request struct {
 }
 
 func NewRequest(c *app.RequestContext) *Request {
-	return &Request{c: c, TraceContext: context.Background()}
+	ctx := context.Background()
+	if v, ok := c.Get("ParentContext"); ok {
+		if parentCtx, ok := v.(context.Context); ok {
+			ctx = parentCtx
+		}
+	}
+	return &Request{c: c, TraceContext: ctx}
 }
 
 func (r *Request) BindJson(obj any) error {

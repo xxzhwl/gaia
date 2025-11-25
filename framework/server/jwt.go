@@ -3,13 +3,15 @@ package server
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strings"
+	"time"
+
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/components/redis"
 	"github.com/xxzhwl/gaia/errwrap"
-	"strings"
-	"time"
 )
 
 type JwtConf struct {
@@ -28,10 +30,12 @@ type GaiaClaims struct {
 func DefaultJwtConf() JwtConf {
 	return JwtConf{
 		Method:         "Hmac256",
-		SigningKey:     "github.com/xxzhwl/gaia",
+		// 从环境变量或配置文件读取密钥
+		SigningKey:     os.Getenv("GAIA_JWT_SIGNING_KEY"), 
 		Issuer:         "gaia-framework",
 		Subject:        "gaia-sub",
-		DurationMinute: 5,
+		// 增加默认有效期
+		DurationMinute: 60, 
 	}
 }
 
@@ -47,6 +51,11 @@ func NewJwtConf(schema string) JwtConf {
 }
 
 func NewJwtAuth(conf JwtConf) *JwtAuth {
+	// 添加验证确保密钥不为空
+	if conf.SigningKey == "" {
+		panic("JWT signing key cannot be empty")
+	}
+	
 	var jwtMethod jwt.SigningMethod
 	switch conf.Method {
 	case "Hmac256":

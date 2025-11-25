@@ -6,11 +6,13 @@ package server
 import (
 	"context"
 	"fmt"
-	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/xxzhwl/gaia"
-	"github.com/xxzhwl/gaia/framework/logImpl"
 	"net/http"
 	"time"
+
+	"github.com/cloudwego/hertz/pkg/app"
+
+	"github.com/xxzhwl/gaia"
+	"github.com/xxzhwl/gaia/framework/logImpl"
 )
 
 const detailInfo = `
@@ -49,7 +51,6 @@ func (s *Server) defaultServerLogger() app.HandlerFunc {
 		ctx.Set(TraceIdKey, gaia.GetContextTrace().TraceId)
 		//请求开始时间
 		startTime := time.Now()
-		ctx.Next(c)
 		defer func() {
 			//请求结束时间
 			endTime := time.Now()
@@ -112,6 +113,7 @@ func (s *Server) defaultServerLogger() app.HandlerFunc {
 				logger.ApiLogBody(gaia.LogInfoLevel, content, logBody)
 			}
 		}()
+		ctx.Next(c)
 
 	}
 }
