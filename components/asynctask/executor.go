@@ -60,7 +60,7 @@ func (e *Executor) Run() bool {
 	//业务执行之前的失败，是可以重试的
 	model, err := getTaskById(e.TaskId, e.Ctx)
 	if err != nil {
-		msg := fmt.Sprintf("获取任务信息%d失败:"+err.Error(), e.TaskId)
+		msg := fmt.Sprintf("获取任务信息%d失败:%s", e.TaskId, err.Error())
 		e.Logger.Error(msg)
 		updateTaskWait(e.TaskId, msg, now, e.Ctx)
 		return false
@@ -75,21 +75,21 @@ func (e *Executor) Run() bool {
 	e.TaskInfo = model
 
 	if err := e.preRun(); err != nil {
-		msg := fmt.Sprintf("预处理错误:" + err.Error())
+		msg := fmt.Sprintf("预处理错误:%s", err.Error())
 		e.Logger.Error(msg)
 		updateTaskFailed(e.TaskInfo.Id, msg, now, e.Ctx)
 		return false
 	}
 
 	if res, err := e.run(); err != nil {
-		msg := fmt.Sprintf("执行错误:" + err.Error())
+		msg := fmt.Sprintf("执行错误:%s", err.Error())
 		e.Logger.Error(msg)
 		updateTaskFailed(e.TaskInfo.Id, msg, now, e.Ctx)
 		return false
 	} else {
 		marshal, err := json.Marshal(res)
 		if err != nil {
-			msg := fmt.Sprintf("结果序列化错误:" + err.Error())
+			msg := fmt.Sprintf("结果序列化错误:%s", err.Error())
 			e.Logger.Error(msg)
 			updateTaskFailed(e.TaskInfo.Id, msg, now, e.Ctx)
 			return false
@@ -102,7 +102,7 @@ func (e *Executor) Run() bool {
 	}
 
 	if err := e.postRun(); err != nil {
-		msg := fmt.Sprintf("后处理错误:" + err.Error())
+		msg := fmt.Sprintf("后处理错误:%s", err.Error())
 		e.Logger.Error(msg)
 		updateTaskFailed(e.TaskInfo.Id, msg, now, e.Ctx)
 		return false

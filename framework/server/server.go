@@ -7,6 +7,8 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
@@ -117,30 +119,22 @@ func (s *Server) sortRoutes(routes route.RoutesInfo) {
 	}
 
 	// 冒泡排序实现
-	for i := 0; i < len(routes)-1; i++ {
-		for j := i + 1; j < len(routes); j++ {
-			if s.isRouteNeedSwap(routes[i], routes[j], methodPriority) {
-				routes[i], routes[j] = routes[j], routes[i]
-			}
+	// 使用sort.Slice进行排序，效率更高
+	sort.Slice(routes, func(i, j int) bool {
+		iPrio := methodPriority[string(routes[i].Method)]
+		jPrio := methodPriority[string(routes[j].Method)]
+
+		// 设置默认优先级（未定义的方法放到最后）
+		if iPrio == 0 {
+			iPrio = 999
 		}
-	}
-}
+		if jPrio == 0 {
+			jPrio = 999
+		}
 
-// isRouteNeedSwap 判断两个路由是否需要交换位置
-func (s *Server) isRouteNeedSwap(route1, route2 route.RouteInfo, priorityMap map[string]int) bool {
-	iPrio := priorityMap[string(route1.Method)]
-	jPrio := priorityMap[string(route2.Method)]
-
-	// 设置默认优先级（未定义的方法放到最后）
-	if iPrio == 0 {
-		iPrio = 999
-	}
-	if jPrio == 0 {
-		jPrio = 999
-	}
-
-	// 优先按方法优先级排序，优先级相同时按路径字母顺序排序
-	return iPrio > jPrio || (iPrio == jPrio && string(route1.Path) > string(route2.Path))
+		// 优先按方法优先级排序，优先级相同时按路径字母顺序排序
+		return iPrio < jPrio || (iPrio == jPrio && string(routes[i].Path) < string(routes[j].Path))
+	})
 }
 
 // formatRoutesInfo 生成格式化的路由信息表格
@@ -170,34 +164,18 @@ func (s *Server) formatRoutesInfo(routes route.RoutesInfo) string {
 	return result
 }
 
-// generateDashLine 生成指定长度的虚线
+// 优化生成虚线的实现
 func (s *Server) generateDashLine(length int) string {
-	line := ""
-	for i := 0; i < length; i++ {
-		line += "-"
-	}
-	return line
+	return strings.Repeat("-", length)
 }
 
-// centerString 将字符串在指定宽度内居中显示
+// 优化居中字符串的实现
 func (s *Server) centerString(str string, width int) string {
 	padding := (width - len(str)) / 2
-	result := ""
-
-	// 添加左侧填充
-	for i := 0; i < padding; i++ {
-		result += " "
+	if padding <= 0 {
+		return str
 	}
-
-	// 添加字符串内容
-	result += str
-
-	// 确保总长度符合要求
-	for len(result) < width {
-		result += " "
-	}
-
-	return result
+	return strings.Repeat(" ", padding) + str + strings.Repeat(" ", width-len(str)-padding)
 }
 
 // formatRoute 格式化单条路由信息

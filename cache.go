@@ -9,6 +9,12 @@ import (
 	"time"
 )
 
+// 添加缓存大小限制和淘汰策略
+var maxCacheSize = 10000 // 默认最大缓存数量
+
+// 添加优雅关闭机制
+var stopCleanCh chan struct{}
+
 // Cache逻辑
 // 本Cache封装使用一个特定的全局变量存储缓存数据，因此仅适用于同一Server实例服务内
 // 数据结构体
@@ -22,6 +28,7 @@ var mutexSysGlobalCacheStack sync.RWMutex
 
 func init() {
 	sysGlobalCacheStack = make(map[string]cacheNode)
+	stopCleanCh = make(chan struct{})
 	clean()
 }
 
@@ -34,34 +41,76 @@ func NewCache() *Cache {
 	return &Cache{}
 }
 
+// 添加配置函数，允许用户自定义最大缓存大小
+func SetMaxCacheSize(size int) {
+	mutexSysGlobalCacheStack.Lock()
+	defer mutexSysGlobalCacheStack.Unlock()
+	maxCacheSize = size
+}
+
 // 定时清理过期的缓存数据
 func clean() {
 	//Log("INFO", "Start a daemon goroutine to clean up expired data.")
 	go func() {
 		defer CatchPanic()
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
 		for {
-			mutexSysGlobalCacheStack.Lock()
-			if len(sysGlobalCacheStack) > 0 {
+			select {
+			case <-ticker.C:
+				// 只获取读锁，收集需要删除的键
+				mutexSysGlobalCacheStack.RLock()
+				var expiredKeys []string
+				now := time.Now()
 				for key, node := range sysGlobalCacheStack {
-					if time.Now().After(node.Expiration) {
-						delete(sysGlobalCacheStack, key)
+					if now.After(node.Expiration) {
+						expiredKeys = append(expiredKeys, key)
 					}
 				}
+				mutexSysGlobalCacheStack.RUnlock()
+
+				// 只在需要删除时获取写锁
+				if len(expiredKeys) > 0 {
+					mutexSysGlobalCacheStack.Lock()
+					for _, key := range expiredKeys {
+						// 再次检查，避免并发问题
+						if node, exists := sysGlobalCacheStack[key]; exists && now.After(node.Expiration) {
+							delete(sysGlobalCacheStack, key)
+						}
+					}
+					mutexSysGlobalCacheStack.Unlock()
+				}
+			case <-stopCleanCh:
+				return
 			}
-			mutexSysGlobalCacheStack.Unlock()
-			time.Sleep(30 * time.Second)
 		}
 	}()
 }
 
+// CloseClean 添加关闭函数
+func CloseClean() {
+	close(stopCleanCh)
+}
+
 // Set 设置一个值到cache中
 func (o *Cache) Set(key string, value any, expiration time.Duration) {
-	//启动一个独立的goroutine，定时清理过期的缓存数据
-	//startToCleanCacheOnce.Do(o.clean)
 	mutexSysGlobalCacheStack.Lock()
 	defer mutexSysGlobalCacheStack.Unlock()
-	sysGlobalCacheStack[key] = cacheNode{Data: value, Expiration: time.Now().Add(expiration)}
 
+	// 检查缓存大小，如果超过限制，删除最早过期的数据
+	if len(sysGlobalCacheStack) >= maxCacheSize {
+		var oldestKey string
+		var oldestTime time.Time
+		for k, node := range sysGlobalCacheStack {
+			if oldestTime.IsZero() || node.Expiration.Before(oldestTime) {
+				oldestKey = k
+				oldestTime = node.Expiration
+			}
+		}
+		delete(sysGlobalCacheStack, oldestKey)
+	}
+
+	sysGlobalCacheStack[key] = cacheNode{Data: value, Expiration: time.Now().Add(expiration)}
 }
 
 // Get 从cache中获取一个值
@@ -78,6 +127,17 @@ func (o *Cache) Get(key string) any {
 	if time.Now().Before(v.Expiration) {
 		return v.Data
 	}
+
+	// 异步删除过期数据
+	go func() {
+		mutexSysGlobalCacheStack.Lock()
+		// 再次检查，避免并发问题
+		if node, exists := sysGlobalCacheStack[key]; exists && time.Now().After(node.Expiration) {
+			delete(sysGlobalCacheStack, key)
+		}
+		mutexSysGlobalCacheStack.Unlock()
+	}()
+
 	return nil
 }
 
@@ -210,10 +270,24 @@ func CacheLoad[O any](ckey string, expiration time.Duration, fn func() (result O
 		return
 	}
 
-	cache := NewCache()
-	if data := cache.Get(ckey); data != nil {
-		if v, ok := data.(O); ok {
-			return v, nil
+	// 直接使用全局缓存，避免创建不必要的实例
+	mutexSysGlobalCacheStack.RLock()
+	v, ok := sysGlobalCacheStack[ckey]
+	mutexSysGlobalCacheStack.RUnlock()
+	if ok {
+		if time.Now().Before(v.Expiration) {
+			if v, ok := v.Data.(O); ok {
+				return v, nil
+			}
+		} else {
+			// 异步删除过期数据
+			go func() {
+				mutexSysGlobalCacheStack.Lock()
+				if node, exists := sysGlobalCacheStack[ckey]; exists && time.Now().After(node.Expiration) {
+					delete(sysGlobalCacheStack, ckey)
+				}
+				mutexSysGlobalCacheStack.Unlock()
+			}()
 		}
 	}
 
@@ -224,8 +298,10 @@ func CacheLoad[O any](ckey string, expiration time.Duration, fn func() (result O
 	}
 
 	if !Empty(result) {
-		//设置缓存
-		cache.Set(ckey, result, expiration)
+		// 设置缓存
+		mutexSysGlobalCacheStack.Lock()
+		sysGlobalCacheStack[ckey] = cacheNode{Data: result, Expiration: time.Now().Add(expiration)}
+		mutexSysGlobalCacheStack.Unlock()
 	}
 
 	return

@@ -9,6 +9,7 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/golang-jwt/jwt/v5"
+
 	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/components/redis"
 	"github.com/xxzhwl/gaia/errwrap"
@@ -29,13 +30,13 @@ type GaiaClaims struct {
 
 func DefaultJwtConf() JwtConf {
 	return JwtConf{
-		Method:         "Hmac256",
+		Method: "Hmac256",
 		// 从环境变量或配置文件读取密钥
-		SigningKey:     os.Getenv("GAIA_JWT_SIGNING_KEY"), 
-		Issuer:         "gaia-framework",
-		Subject:        "gaia-sub",
+		SigningKey: os.Getenv("GAIA_JWT_SIGNING_KEY"),
+		Issuer:     "gaia-framework",
+		Subject:    "gaia-sub",
 		// 增加默认有效期
-		DurationMinute: 60, 
+		DurationMinute: 60,
 	}
 }
 
@@ -55,7 +56,7 @@ func NewJwtAuth(conf JwtConf) *JwtAuth {
 	if conf.SigningKey == "" {
 		panic("JWT signing key cannot be empty")
 	}
-	
+
 	var jwtMethod jwt.SigningMethod
 	switch conf.Method {
 	case "Hmac256":
@@ -148,10 +149,7 @@ func (j *JwtAuth) GetCk(token string) (ck string, err error) {
 
 // IsRefreshTokenKey 判断是不是refreshToken的用户信息
 func IsRefreshTokenKey(ck string) bool {
-	if strings.HasSuffix(ck, "-refresh") {
-		return true
-	}
-	return false
+	return strings.HasSuffix(ck, "-refresh")
 }
 
 // GetUserKeyFromCk 判断是不是refreshToken的用户信息

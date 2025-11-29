@@ -7,11 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/xxzhwl/gaia"
-	"github.com/xxzhwl/gaia/dics"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/xxzhwl/gaia"
+	"github.com/xxzhwl/gaia/dics"
 )
 
 /**
@@ -173,21 +174,23 @@ func (c *CommonQueryModel) CommonQuery(req Request) (any, error) {
 }
 
 func loadQuerySchema(schema string) (CommonQuerySchema, error) {
-	fileName := fmt.Sprintf(DefaultCommonQueryFileFmt, schema)
-	exists := gaia.FileExists(fileName)
-	if !exists {
-		return CommonQuerySchema{}, errors.New(schema + " does not exist")
-	}
+	return gaia.CacheLoad("common_query_schema", time.Hour*24, func() (CommonQuerySchema, error) {
+		fileName := fmt.Sprintf(DefaultCommonQueryFileFmt, schema)
+		exists := gaia.FileExists(fileName)
+		if !exists {
+			return CommonQuerySchema{}, errors.New(schema + " does not exist")
+		}
 
-	file, err := os.ReadFile(fileName)
-	if err != nil {
-		return CommonQuerySchema{}, err
-	}
-	c := CommonQuerySchema{}
-	if err = json.Unmarshal(file, &c); err != nil {
-		return CommonQuerySchema{}, err
-	}
-	return c, nil
+		file, err := os.ReadFile(fileName)
+		if err != nil {
+			return CommonQuerySchema{}, err
+		}
+		c := CommonQuerySchema{}
+		if err = json.Unmarshal(file, &c); err != nil {
+			return CommonQuerySchema{}, err
+		}
+		return c, nil
+	})
 }
 
 func getSelectColumns(columns []string, columnIdMap map[string]string, mainTable string) (newColumns []string, joins []string) {

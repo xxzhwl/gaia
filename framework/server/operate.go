@@ -8,12 +8,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"gorm.io/gorm"
+
 	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/framework/server/operateProxy"
 	"github.com/xxzhwl/gaia/valueHandler"
-	"gorm.io/gorm"
-	"os"
-	"strings"
 )
 
 /**
@@ -179,25 +182,26 @@ func (c *CommonOperateModel) checkCondition() {
 		}
 	}
 	c.Condition = newCondition
-	return
 }
 
 func loadOperateSchema(schema string) (CommonOperateSchema, error) {
-	fileName := fmt.Sprintf(DefaultCommonOperateFileFmt, schema)
-	exists := gaia.FileExists(fileName)
-	if !exists {
-		return CommonOperateSchema{}, errors.New(schema + " does not exist")
-	}
+	return gaia.CacheLoad("common_operate_schema", time.Hour*24, func() (CommonOperateSchema, error) {
+		fileName := fmt.Sprintf(DefaultCommonOperateFileFmt, schema)
+		exists := gaia.FileExists(fileName)
+		if !exists {
+			return CommonOperateSchema{}, errors.New(schema + " does not exist")
+		}
 
-	file, err := os.ReadFile(fileName)
-	if err != nil {
-		return CommonOperateSchema{}, err
-	}
-	c := CommonOperateSchema{}
-	if err = json.Unmarshal(file, &c); err != nil {
-		return CommonOperateSchema{}, err
-	}
-	return c, nil
+		file, err := os.ReadFile(fileName)
+		if err != nil {
+			return CommonOperateSchema{}, err
+		}
+		c := CommonOperateSchema{}
+		if err = json.Unmarshal(file, &c); err != nil {
+			return CommonOperateSchema{}, err
+		}
+		return c, nil
+	})
 }
 
 func (c *CommonOperateModel) GetAllCommonOperateSchema(req Request) (any, error) {
@@ -337,11 +341,11 @@ func (d *DefaultWriter) Delete(tableName string, condition, extInfo map[string]a
 
 func getConditionForOperate(condition map[string]any, mainTable string) (
 	newCondition []string, newConditionParam []any) {
-	for key, v := range condition {
+	for key, vl := range condition {
 		temp := key
-		switch v.(type) {
+		switch v := vl.(type) {
 		case map[string]any:
-			for exp, val := range v.(map[string]any) {
+			for exp, val := range v {
 				expTemp := ""
 				relateNull := false
 				switch exp {

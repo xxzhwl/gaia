@@ -139,7 +139,7 @@ func MakeHandler(handler HandlerFunc) app.HandlerFunc {
 		defer func() {
 			if r := recover(); r != nil {
 				gaia.PanicLog(r)
-				req.resp(nil, fmt.Errorf("encounter panic: %v\n", r))
+				req.resp(nil, fmt.Errorf("encounter panic: %v", r))
 			}
 		}()
 
@@ -159,7 +159,7 @@ func MakePlugin(handler Plugin) app.HandlerFunc {
 		defer func() {
 			if r := recover(); r != nil {
 				gaia.PanicLog(r)
-				req.resp(nil, fmt.Errorf("encounter panic: %v\n", r))
+				req.resp(nil, fmt.Errorf("encounter panic: %v", r))
 			}
 		}()
 
