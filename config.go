@@ -8,14 +8,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/xxzhwl/gaia/cvt"
-	"github.com/xxzhwl/gaia/dic"
-	"github.com/xxzhwl/gaia/errwrap"
-	"gopkg.in/yaml.v3"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/xxzhwl/gaia/cvt"
+	"github.com/xxzhwl/gaia/dic"
+	"github.com/xxzhwl/gaia/errwrap"
+	"gopkg.in/yaml.v3"
 )
 
 // 配置文件分为几个部分：1.环境变量；2.本地配置文件；3.远程配置中心
@@ -49,10 +50,16 @@ func GetConfFromRemoteConfCenter(ctx context.Context, key string) (res any, exis
 	if GetConfFromRemote == nil {
 		return nil, false, nil
 	}
+
+	// 使用goroutine和channel实现超时控制
+	// 因为GetConfFromRemote函数不支持context参数
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		res, existed, err = getConfFromRemoteConfCenter(key)
+		remote, b, errTemp := GetConfFromRemote(key)
+		res = remote
+		existed = b
+		err = errTemp
 	}()
 
 	select {
@@ -60,19 +67,14 @@ func GetConfFromRemoteConfCenter(ctx context.Context, key string) (res any, exis
 		Println(LogErrorLevel, fmt.Sprintf("从远程配置中心获取配置%s超时", key))
 		return nil, false, ctx.Err()
 	case <-done:
-		return
+		if err != nil {
+			return nil, false, err
+		}
+		if existed {
+			return res, true, nil
+		}
+		return nil, false, nil
 	}
-}
-
-func getConfFromRemoteConfCenter(key string) (any, bool, error) {
-	remote, b, err := GetConfFromRemote(key)
-	if err != nil {
-		return nil, false, err
-	}
-	if b {
-		return remote, true, nil
-	}
-	return nil, false, nil
 }
 
 func GetConfFromLocalFile(key string) (any, bool, error) {
@@ -144,11 +146,24 @@ func GetConf(key string) (any, error) {
 	confCacheTime := defaultConfCacheTime
 
 	res, err := CacheLoad("conf-"+key, confCacheTime, func() (result any, err error) {
-		//1.进入方法说明缓存不存在，我们直接考虑怎么拿一个配置
-		//2.去找远程配置中心拿，若没有或者超时(这里请求远程配置中心，要考虑不能太影响速度，那么就要设置超时时间，我们给它200ms的时间)拿不到就3
+		TraceF("1.获取环境变量配置")
+		//1.找env拿，若没有拿到就无
+		envConf, ok := os.LookupEnv(key)
+		if ok {
+			return envConf, nil
+		}
+
+		TraceF("2.获取本地配置")
+		//2.找本地文件拿，若没有拿到就3
+		fileConf, fileExisted, err := getConfFromLocalFile(DefaultLocalConfigFile, key)
+		if fileExisted {
+			confCacheTime = localConfCacheTime //本地文件我们认为改动较少，这里缓存时间长一些
+			return fileConf, nil
+		}
+
+		TraceF("3.获取远程配置")
 		ctx, cancel := context.WithTimeout(context.Background(), defaultRemoteConfTimeoutTime)
 		defer cancel()
-		TraceF("1.获取远程配置")
 		remoteConf, existed, err := GetConfFromRemoteConfCenter(ctx, key)
 		if existed {
 			//写入本地文件
@@ -159,40 +174,30 @@ func GetConf(key string) (any, error) {
 			if err != nil {
 				Println(LogErrorLevel, fmt.Sprintf("缓存远程配置到本地文件失败%s", err.Error()))
 			} else {
-				TraceF("1.1远程配置获取成功，写入文件")
+				TraceF("3.1远程配置获取成功，写入文件")
 				if errTemp := FilePutContent(DefaultRemoteConfigFile, string(marshal)); errTemp != nil {
 					Println(LogErrorLevel, fmt.Sprintf("缓存远程配置到本地文件失败%s", errTemp.Error()))
 				}
 			}
 			return remoteConf, nil
 		}
-		TraceF("2.获取远程配置本地缓存")
+		TraceF("4.获取远程配置本地缓存")
 		//如果是超时导致的,可以看下本地缓存的
 		if errors.Is(err, context.DeadlineExceeded) {
-			TraceF("1.1远程配置获取超时")
+			TraceF("4.1远程配置获取超时")
 			remoteFileConf, remoteFileExisted, err := getConfFromLocalFile(DefaultRemoteConfigFile, key)
 			if remoteFileExisted {
 				return remoteFileConf, nil
 			}
 			if err == nil {
-				TraceF("1.2远程配置获取超时，获取远程配置本地缓存文件内容")
+				TraceF("4.2远程配置获取超时，获取远程配置本地缓存文件内容")
 			} else {
 				Println(LogErrorLevel, err.Error())
 			}
 		}
-		TraceF("3.获取本地配置")
-		//3.找本地文件拿，若没有拿到就4
-		fileConf, fileExisted, err := getConfFromLocalFile(DefaultLocalConfigFile, key)
-		if fileExisted {
-			confCacheTime = localConfCacheTime //本地文件我们认为改动较少，这里缓存时间长一些
-			return fileConf, nil
-		}
-		TraceF("4.获取环境变量配置")
-		//4.找env拿，若没有拿到就无
-		envConf, ok := os.LookupEnv(key)
-		if ok {
-			return envConf, nil
-		}
+
+		//1.进入方法说明缓存不存在，我们直接考虑怎么拿一个配置
+		//2.去找远程配置中心拿，若没有或者超时(这里请求远程配置中心，要考虑不能太影响速度，那么就要设置超时时间，我们给它200ms的时间)拿不到就3
 
 		if err != nil {
 			return nil, fmt.Errorf("获取配置:%s失败:%s", key, err)
@@ -283,7 +288,7 @@ func GetSafeConfFloat64(key string) float64 {
 	return v
 }
 
-func GetSafeFloat64WithDefault(key string, defaultValue float64) float64 {
+func GetSafeConfFloat64WithDefault(key string, defaultValue float64) float64 {
 	v, err := GetConfFloat64(key)
 	if err != nil {
 		return defaultValue
