@@ -278,6 +278,14 @@ func ByteToListWithNewline(content []byte) ([]string, error) {
 		bLine, bLineErr := buf.ReadBytes('\r')
 		if bLineErr != nil {
 			if bLineErr == io.EOF {
+				// 处理最后一行（没有换行符的情况）
+				if len(bLine) > 0 {
+					line := string(bLine)
+					line = strings.TrimSpace(line)
+					if len(line) > 0 {
+						retval = append(retval, line)
+					}
+				}
 				break
 			}
 			return nil, bLineErr

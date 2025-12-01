@@ -7,12 +7,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/xxzhwl/gaia"
+	"strings"
+	"time"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"gorm.io/gorm/utils"
-	"strings"
-	"time"
+
+	"github.com/xxzhwl/gaia"
 )
 
 var (
@@ -97,9 +99,9 @@ func (l *LocalDbLogger) Trace(ctx context.Context, begin time.Time, fc func() (s
 			}
 		} else {
 			logLevel = gaia.LogTraceLevel
-			if gaia.GetSafeConfString("Gorm.LogLevel") == "Trace" {
-				logContent = fmt.Sprintf(traceWarnStr, utils.FileWithLineNum(), "", sqlType, mainTable, float64(elapsed.Nanoseconds())/1e6, rows, sql)
-			}
+			// if gaia.GetSafeConfString("Gorm.LogLevel") == "Trace" {
+			// 	logContent = fmt.Sprintf(traceWarnStr, utils.FileWithLineNum(), "", sqlType, mainTable, float64(elapsed.Nanoseconds())/1e6, rows, sql)
+			// }
 			return
 		}
 	}

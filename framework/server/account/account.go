@@ -115,10 +115,10 @@ func sendMailCode(mailBox, code string) error {
 	}
 
 	return mail.SendMail(gaia.MailMessage{
-		To:         []string{mailBox},
-		Subject:    "登录验证码",
-		Body:       fmt.Sprintf("您的登录验证码是%s\n", code),
-		Attachment: nil,
+		To:          []string{mailBox},
+		Subject:     "登录验证码",
+		Body:        fmt.Sprintf("您的登录验证码是%s\n", code),
+		Attachments: nil,
 	})
 }
 

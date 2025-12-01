@@ -4,11 +4,12 @@
 package buffer
 
 import (
-	"github.com/xxzhwl/gaia"
-	"github.com/xxzhwl/gaia/g"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/xxzhwl/gaia"
+	"github.com/xxzhwl/gaia/g"
 )
 
 var DefaultLoggerPath = "var" + gaia.Sep + "logs" + gaia.Sep

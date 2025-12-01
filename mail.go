@@ -1,7 +1,9 @@
 package gaia
 
 import (
-	"google.golang.org/appengine/mail"
+	"bytes"
+	"io"
+
 	"gopkg.in/gomail.v2"
 )
 
@@ -33,12 +35,21 @@ func NewMailConfBySchema(schema string) (MailConf, error) {
 	return conf, nil
 }
 
+// Attachment 邮件附件结构体
+type Attachment struct {
+	FileName string
+	Content  []byte
+	Reader   io.Reader
+	FilePath string
+}
+
+// MailMessage 邮件消息结构体
 type MailMessage struct {
-	To         []string
-	Cc         []string
-	Subject    string
-	Body       string
-	Attachment []mail.Attachment
+	To          []string
+	Cc          []string
+	Subject     string
+	Body        string
+	Attachments []Attachment
 }
 
 func (m MailConf) SendMail(message MailMessage) error {
@@ -48,6 +59,27 @@ func (m MailConf) SendMail(message MailMessage) error {
 	newMessage.SetHeader("Cc", message.Cc...)
 	newMessage.SetHeader("Subject", message.Subject)
 	newMessage.SetBody("text/html", message.Body)
+
+	// 添加附件
+	for _, attachment := range message.Attachments {
+		if attachment.FilePath != "" {
+			// 从文件路径添加附件
+			newMessage.Attach(attachment.FilePath)
+		} else if attachment.Reader != nil || len(attachment.Content) > 0 {
+			// 从io.Reader或字节数组添加附件
+			var reader io.Reader
+			if attachment.Reader != nil {
+				reader = attachment.Reader
+			} else {
+				reader = bytes.NewReader(attachment.Content)
+			}
+			// 使用Attach方法的文件设置功能，从reader添加附件
+			newMessage.Attach(attachment.FileName, gomail.SetCopyFunc(func(w io.Writer) error {
+				_, err := io.Copy(w, reader)
+				return err
+			}))
+		}
+	}
 
 	return gomail.NewDialer(m.Host, m.Port, m.UserName, m.Password).DialAndSend(newMessage)
 }

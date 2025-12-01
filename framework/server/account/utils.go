@@ -4,8 +4,9 @@
 package account
 
 import (
-	"github.com/xxzhwl/gaia"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/xxzhwl/gaia"
 )
 
 type EncryptPasswordFunc func(pwd string) (string, error)
@@ -41,7 +42,7 @@ func PasswordMatch(originPwd, storePwd string) bool {
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(storePwd), []byte(originPwd)); err != nil {
-		gaia.ErrorF("password not match: %s", err.Error)
+		gaia.ErrorF("password not match: %s", err.Error())
 		return false
 	}
 	return true

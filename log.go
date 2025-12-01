@@ -105,6 +105,14 @@ func GetLogger() IBaseLog {
 
 var NewLogger func(title string) IBaseLog
 
+func init() {
+	if NewLogger == nil {
+		NewLogger = func(title string) IBaseLog {
+			return &TempLog{}
+		}
+	}
+}
+
 func Log(logLevel LogLevel, content string) {
 	if LocalLogger != nil {
 		LocalLogger.Log(logLevel, content)
