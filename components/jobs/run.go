@@ -6,13 +6,14 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
+
 	"github.com/robfig/cron/v3"
+
 	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/framework/logImpl"
 	"github.com/xxzhwl/gaia/gexit"
-
-	"sync"
-	"time"
 )
 
 type RunJob struct {
