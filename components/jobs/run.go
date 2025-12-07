@@ -4,15 +4,20 @@
 package jobs
 
 import (
+	"context"
 	"fmt"
 	"github.com/robfig/cron/v3"
 	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/framework/logImpl"
+	"github.com/xxzhwl/gaia/gexit"
+
 	"sync"
 	"time"
 )
 
 type RunJob struct {
+	exitContext context.Context
+
 	instanceLogger *logImpl.DefaultLogger
 	cronJobLogger  *logImpl.DefaultLogger
 	cronHookLogger *logImpl.DefaultLogger
@@ -30,6 +35,7 @@ type RunJob struct {
 
 func NewRunJob() *RunJob {
 	return &RunJob{
+		exitContext:    gexit.GetExitContext(),
 		dbSchema:       "Framework.Mysql",
 		instanceLogger: logImpl.NewDefaultLogger().SetTitle("Jobs"),
 		cronJobLogger:  logImpl.NewDefaultLogger().SetTitle("CronJob"),
@@ -46,6 +52,7 @@ func NewRunJob() *RunJob {
 
 func NewSecondJobs() *RunJob {
 	return &RunJob{
+		exitContext:    gexit.GetExitContext(),
 		dbSchema:       "Framework.Mysql",
 		instanceLogger: logImpl.NewDefaultLogger().SetTitle("Jobs"),
 		cronJobLogger:  logImpl.NewDefaultLogger().SetTitle("CronJob"),
@@ -81,11 +88,17 @@ func (r *RunJob) run() {
 	}
 	r.cronScheduler.Start()
 	for {
-		if err := r.updateJobs(); err != nil {
-			gaia.SendSystemAlarm("JobsErr", err.Error())
-			r.instanceLogger.ErrorF("Update jobs error: %s", err.Error())
+		select {
+		case <-r.exitContext.Done():
+			gaia.InfoF("Received exit signal,RunJob shutting down")
+			r.Stop()
+			return
+		case <-time.After(5 * time.Second):
+			if err := r.updateJobs(); err != nil {
+				gaia.SendSystemAlarm("JobsErr", err.Error())
+				r.instanceLogger.ErrorF("Update jobs error: %s", err.Error())
+			}
 		}
-		time.Sleep(5 * time.Second)
 	}
 }
 
