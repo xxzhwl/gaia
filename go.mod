@@ -5,7 +5,7 @@ go 1.24.4
 require (
 	github.com/cloudwego/hertz v0.9.7
 	github.com/elastic/go-elasticsearch/v8 v8.13.1
-	github.com/golang-jwt/jwt/v5 v5.2.1
+	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/hashicorp/consul/api v1.30.0
 	github.com/hertz-contrib/cors v0.1.0
 	github.com/hertz-contrib/sse v0.1.0
@@ -13,15 +13,15 @@ require (
 	github.com/minio/minio-go/v7 v7.0.81
 	github.com/pkg/errors v0.9.1
 	github.com/redis/go-redis/extra/redisotel/v9 v9.7.1
-	github.com/redis/go-redis/v9 v9.7.1
+	github.com/redis/go-redis/v9 v9.7.3
 	github.com/robfig/cron/v3 v3.0.0
 	github.com/segmentio/kafka-go v0.4.47
 	go.opentelemetry.io/otel v1.32.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.32.0
 	go.opentelemetry.io/otel/sdk v1.32.0
 	go.opentelemetry.io/otel/trace v1.32.0
-	golang.org/x/crypto v0.36.0
-	golang.org/x/text v0.24.0
+	golang.org/x/crypto v0.45.0
+	golang.org/x/text v0.31.0
 	google.golang.org/appengine v1.6.8
 	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df
 	gopkg.in/yaml.v3 v3.0.1
@@ -86,8 +86,8 @@ require (
 	go.opentelemetry.io/proto/otlp v1.3.1 // indirect
 	golang.org/x/arch v0.16.0 // indirect
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0 // indirect
-	golang.org/x/net v0.37.0 // indirect
-	golang.org/x/sys v0.32.0 // indirect
+	golang.org/x/net v0.47.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241104194629-dd2ea8efbc28 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241104194629-dd2ea8efbc28 // indirect
 	google.golang.org/grpc v1.67.1 // indirect

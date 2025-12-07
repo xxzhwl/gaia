@@ -174,7 +174,7 @@ func (c *CommonQueryModel) CommonQuery(req Request) (any, error) {
 }
 
 func loadQuerySchema(schema string) (CommonQuerySchema, error) {
-	return gaia.CacheLoad("common_query_schema", time.Hour*24, func() (CommonQuerySchema, error) {
+	return gaia.CacheLoad("common_query_schema_"+schema, time.Hour*24, func() (CommonQuerySchema, error) {
 		fileName := fmt.Sprintf(DefaultCommonQueryFileFmt, schema)
 		exists := gaia.FileExists(fileName)
 		if !exists {

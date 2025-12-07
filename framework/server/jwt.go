@@ -47,16 +47,13 @@ type JwtAuth struct {
 
 func NewJwtConf(schema string) JwtConf {
 	conf := DefaultJwtConf()
+	gaia.PrettyPrint(conf)
 	gaia.LoadConfToObjWith(schema, &conf)
+	gaia.PrettyPrint(conf)
 	return conf
 }
 
 func NewJwtAuth(conf JwtConf) *JwtAuth {
-	// 添加验证确保密钥不为空
-	if conf.SigningKey == "" {
-		panic("JWT signing key cannot be empty")
-	}
-
 	var jwtMethod jwt.SigningMethod
 	switch conf.Method {
 	case "Hmac256":
@@ -75,6 +72,11 @@ func NewJwtAuth(conf JwtConf) *JwtAuth {
 
 // GenerateToken 生成Token
 func (j *JwtAuth) GenerateToken(ckv string) (string, error) {
+	// 添加验证确保密钥不为空
+	if j.conf.SigningKey == "" {
+		return "", errors.New("JWT signing key cannot be empty")
+	}
+
 	claims := jwt.NewWithClaims(j.SigningMethod, GaiaClaims{jwt.RegisteredClaims{
 		Issuer:    j.conf.Issuer,
 		Subject:   j.conf.Subject,
@@ -92,6 +94,10 @@ func (j *JwtAuth) GenerateToken(ckv string) (string, error) {
 
 // GenerateRefreshToken 生成Refresh-Token
 func (j *JwtAuth) GenerateRefreshToken(ckv string) (string, error) {
+	// 添加验证确保密钥不为空
+	if j.conf.SigningKey == "" {
+		return "", errors.New("JWT signing key cannot be empty")
+	}
 	return j.GenerateToken(ckv + "-refresh")
 }
 
@@ -100,6 +106,10 @@ func (j *JwtAuth) Auth() app.HandlerFunc {
 }
 
 func (j *JwtAuth) auth(c Request) (err error) {
+	// 添加验证确保密钥不为空
+	if j.conf.SigningKey == "" {
+		return errors.New("JWT signing key cannot be empty")
+	}
 	//鉴权token，通过继续，否则失败
 	auth := string(c.c.GetHeader("Authorization"))
 	if len(auth) == 0 {
@@ -130,6 +140,10 @@ func (j *JwtAuth) auth(c Request) (err error) {
 
 // GetCk 获取jwt中的用户信息
 func (j *JwtAuth) GetCk(token string) (ck string, err error) {
+	// 添加验证确保密钥不为空
+	if j.conf.SigningKey == "" {
+		return "", errors.New("JWT signing key cannot be empty")
+	}
 	parse, err := jwt.Parse(token, func(token *jwt.Token) (any, error) {
 		return []byte(j.conf.SigningKey), nil
 	})

@@ -185,7 +185,7 @@ func (c *CommonOperateModel) checkCondition() {
 }
 
 func loadOperateSchema(schema string) (CommonOperateSchema, error) {
-	return gaia.CacheLoad("common_operate_schema", time.Hour*24, func() (CommonOperateSchema, error) {
+	return gaia.CacheLoad("common_operate_schema_"+schema, time.Hour*24, func() (CommonOperateSchema, error) {
 		fileName := fmt.Sprintf(DefaultCommonOperateFileFmt, schema)
 		exists := gaia.FileExists(fileName)
 		if !exists {
