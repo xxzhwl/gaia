@@ -47,9 +47,7 @@ type JwtAuth struct {
 
 func NewJwtConf(schema string) JwtConf {
 	conf := DefaultJwtConf()
-	gaia.PrettyPrint(conf)
 	gaia.LoadConfToObjWith(schema, &conf)
-	gaia.PrettyPrint(conf)
 	return conf
 }
 
