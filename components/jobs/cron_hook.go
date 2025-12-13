@@ -5,9 +5,10 @@ package jobs
 
 import (
 	"fmt"
+	"net/http"
+
 	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/framework/httpclient"
-	"net/http"
 )
 
 func (r *RunJob) updateCronHookJobs(jobs []job) error {

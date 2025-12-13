@@ -103,6 +103,8 @@ func (r *RunJob) addCronServiceJob(job cronJob) error {
 }
 
 func (r *RunJob) DoCronServiceJob(service any, job cronJob) {
+	gaia.BuildContextTrace()
+	defer gaia.RemoveContextTrace()
 	defer func() {
 		if rr := recover(); rr != nil {
 			//记录日志

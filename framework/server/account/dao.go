@@ -5,6 +5,7 @@ package account
 
 import (
 	"context"
+
 	"github.com/xxzhwl/gaia"
 )
 
@@ -31,6 +32,19 @@ func (u UserDao) FindUserByMail(mail string) (user UserVo, err error) {
 		return
 	}
 	tx := db.GetGormDb().WithContext(u.ctx).Table(TUser).Where("mail = ?", mail).Find(&user)
+	if tx.Error != nil {
+		err = tx.Error
+	}
+	return
+}
+
+func (u UserDao) FindUserByMailAndNotLogOut(mail string) (user UserVo, err error) {
+	db, err := gaia.NewFrameworkMysql()
+	if err != nil {
+		return
+	}
+	tx := db.GetGormDb().WithContext(u.ctx).Table(TUser).Where("mail = ?", mail).
+		Where("is_log_out = ?", 0).Find(&user)
 	if tx.Error != nil {
 		err = tx.Error
 	}

@@ -204,8 +204,19 @@ func getCondMap(args []OpArg) []map[string]any {
 		switch opArg.Op {
 		case "lte", "lt", "gte", "gt":
 			res = append(res, map[string]any{"range": map[string]any{opArg.Key: map[string]any{opArg.Op: opArg.Value}}})
+		case "term":
+			res = append(res, map[string]any{"term": map[string]any{opArg.Key: opArg.Value}})
+		case "terms":
+			res = append(res, map[string]any{"terms": map[string]any{opArg.Key: opArg.Value}})
+		case "match":
+			res = append(res, map[string]any{"match": map[string]any{opArg.Key: opArg.Value}})
+		case "wildcard":
+			res = append(res, map[string]any{"wildcard": map[string]any{opArg.Key: opArg.Value}})
+		case "exists":
+			res = append(res, map[string]any{"exists": map[string]any{"field": opArg.Key}})
 		default:
-			res = append(res, map[string]any{opArg.Op: map[string]any{opArg.Key: opArg.Value}})
+			// 默认使用term查询
+			res = append(res, map[string]any{"term": map[string]any{opArg.Key: opArg.Value}})
 		}
 	}
 	return res

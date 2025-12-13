@@ -7,13 +7,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/components/redis"
 	"github.com/xxzhwl/gaia/errwrap"
 	"github.com/xxzhwl/gaia/framework/server"
-	"strconv"
-	"strings"
-	"time"
 )
 
 const (
@@ -21,6 +22,8 @@ const (
 	RegisterMailKey  = "Register-Mail-%s"
 	LoginPhoneKey    = "Login-Phone-%s"
 	RegisterPhoneKey = "Register-Phone-%s"
+
+	CurrentLoginUserNumKey = "CurrentLoginUserNum"
 )
 
 type Account struct {
@@ -191,7 +194,9 @@ func (a Account) Login(req LoginRequest) (resp LoginResponse, err error) {
 		time.Duration(refreshConf.DurationMinute)*time.Minute); err != nil {
 		return
 	}
-
+	if _, err = client.Incr(CurrentLoginUserNumKey); err != nil {
+		return
+	}
 	return LoginResponse{
 		RefreshToken: refreshToken,
 		Token:        token,
@@ -356,7 +361,9 @@ func (a Account) Register(req RegisterRequest) (resp RegisterResponse, err error
 		time.Duration(refreshConf.DurationMinute)*time.Minute); err != nil {
 		return
 	}
-
+	if _, err = client.Incr(CurrentLoginUserNumKey); err != nil {
+		return
+	}
 	return RegisterResponse{
 		UserInfo:     userInfo,
 		Token:        token,
@@ -383,7 +390,7 @@ func registerByMailCode(ctx context.Context, mailBox string, code string) (user 
 		return
 	}
 	//查到
-	if userVo.Id != 0 {
+	if userVo.Id != 0 && userVo.IsLogOut == 0 {
 		err = fmt.Errorf("该邮箱%s已绑定用户信息", mailBox)
 		return
 	}
@@ -430,7 +437,7 @@ func registerByPhoneCode(ctx context.Context, phone string, code string) (user U
 		return
 	}
 	//查到说明绑定过
-	if userVo.Id != 0 {
+	if userVo.Id != 0 && userVo.IsLogOut == 0 {
 		err = fmt.Errorf("手机号%s已绑定用户", phone)
 		return
 	}
@@ -535,6 +542,41 @@ func (a Account) RefreshToken(request RefreshTokenRequest) (resp RefreshTokenRes
 	}
 
 	return RefreshTokenResponse{token}, nil
+}
+
+// LogOutAccountRequest 注销账户参数
+type LogOutAccountRequest struct {
+	UserId int64  `json:"userId" require:"1" memo:"用户id"`
+	Token  string `json:"token" require:"1" memo:"token"`
+	Ctx    context.Context
+}
+
+// LogOutAccount 注销账户
+func (a Account) LogOutAccount(req LogOutAccountRequest) (err error) {
+	repo := NewUserRepo(req.Ctx)
+	u := UserBaseVo{Id: req.UserId, IsLogOut: 1, LogOutTime: gaia.Date(gaia.DateTimeFormat),
+		LogOutTimeStamp: time.Now().UnixMilli()}
+	fmt.Println(111111)
+	gaia.PrettyPrint(u)
+	if errTemp := repo.UpdateUserInfo(u); errTemp != nil {
+		return errTemp
+	}
+
+	cli := redis.NewFrameworkClient().WithCtx(req.Ctx)
+	if errTemp := cli.Del(fmt.Sprintf("token-%s", req.Token)); errTemp != nil {
+		return errTemp
+	}
+	return
+}
+
+// ExitAccountRequest 退出账户参数
+type ExitAccountRequest struct {
+	Ctx context.Context
+}
+
+// ExitAccount 退出账户
+func (a Account) ExitAccount() (err error) {
+	return nil
 }
 
 func SuperAdmin(arg server.Request) bool {

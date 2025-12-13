@@ -26,10 +26,12 @@ type UserBaseVo struct {
 	PhoneNum        string `json:"phoneNum"`
 	IsBan           int    `json:"isBan"`    //被禁
 	IsLogOut        int    `json:"isLogOut"` //用户注销
+	LogOutTime      string `json:"logOutTime"`
 	CreateTime      string `json:"createTime"`
 	UpdateTime      string `json:"updateTime"`
 	CreateTimeStamp int64  `gorm:"autoCreateTime:milli" json:"createTimeStamp"`
 	UpdateTimeStamp int64  `gorm:"autoUpdateTime:milli" json:"updateTimeStamp"`
+	LogOutTimeStamp int64  `gorm:"autoCreateTime:milli" json:"logOutTimeStamp"`
 }
 
 // GetBaseFromVo 获取用户基本信息，用于脱敏密码
@@ -42,9 +44,11 @@ func GetBaseFromVo(userVo UserVo) UserBaseVo {
 		PhoneNum:        userVo.PhoneNum,
 		IsBan:           userVo.IsBan,
 		IsLogOut:        userVo.IsLogOut,
+		LogOutTime:      userVo.LogOutTime,
 		CreateTime:      userVo.CreateTime.Format(time.DateTime),
 		UpdateTime:      userVo.UpdateTime.Format(time.DateTime),
 		CreateTimeStamp: userVo.CreateTimeStamp,
 		UpdateTimeStamp: userVo.UpdateTimeStamp,
+		LogOutTimeStamp: userVo.LogOutTimeStamp,
 	}
 }

@@ -38,6 +38,7 @@ const (
 	RequestIdKey     = "CtxRequestId"
 	TraceIdKey       = "CtxTraceId"
 	AuthorizationKey = "CtxAuthorization"
+	DisableLogKey    = "DisableLog"
 )
 
 func (s *Server) defaultServerLogger() app.HandlerFunc {

@@ -332,6 +332,9 @@ type createRemoteLogDocArg struct {
 }
 
 func (d *DefaultLogger) CreateRemoteLogDoc(arg createRemoteLogDocArg) {
+	if arg.logLevel < gaia.LogInfoLevel {
+		return
+	}
 	g.Go(func() {
 		//考虑到如果
 		var logBodyDetail any

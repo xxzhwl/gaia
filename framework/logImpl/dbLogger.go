@@ -89,20 +89,16 @@ func (l *LocalDbLogger) Trace(ctx context.Context, begin time.Time, fc func() (s
 		logLevel = gaia.LogWarnLevel
 		if elapsed > l.Config.SlowThreshold && l.Config.SlowThreshold != 0 {
 			slowLog := fmt.Sprintf("SLOW SQL >= %v", l.Config.SlowThreshold)
-			if gaia.GetSafeConfString("Gorm.LogLevel") != "Warn" {
-				return
-			}
 			if rows == -1 {
 				logContent = fmt.Sprintf(traceWarnStr, utils.FileWithLineNum(), slowLog, sqlType, mainTable, float64(elapsed.Nanoseconds())/1e6, "-", sql)
 			} else {
 				logContent = fmt.Sprintf(traceWarnStr, utils.FileWithLineNum(), slowLog, sqlType, mainTable, float64(elapsed.Nanoseconds())/1e6, rows, sql)
 			}
 		} else {
-			logLevel = gaia.LogTraceLevel
-			// if gaia.GetSafeConfString("Gorm.LogLevel") == "Trace" {
-			// 	logContent = fmt.Sprintf(traceWarnStr, utils.FileWithLineNum(), "", sqlType, mainTable, float64(elapsed.Nanoseconds())/1e6, rows, sql)
-			// }
-			return
+			if gaia.GetSafeConfString("Gorm.LogLevel") == gaia.LogInfoLevel.String() {
+				logLevel = gaia.LogInfoLevel
+				logContent = fmt.Sprintf(traceWarnStr, utils.FileWithLineNum(), "", sqlType, mainTable, float64(elapsed.Nanoseconds())/1e6, rows, sql)
+			}
 		}
 	}
 

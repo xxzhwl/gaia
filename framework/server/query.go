@@ -464,7 +464,7 @@ func generateCommon(req Request) (any, error) {
 	if err := gaia.FilePutContent(osFileName, osContent); err != nil {
 		return nil, err
 	}
-	return nil, nil
+	return map[string]any{"QueryContent": qsContent, "OperateContent": osContent}, nil
 }
 
 func getDefaultValue(valueType string) any {
