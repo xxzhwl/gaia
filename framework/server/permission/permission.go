@@ -3,11 +3,13 @@ package permission
 import (
 	"context"
 	"errors"
+	"time"
+
+	"gorm.io/gorm"
+
 	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/framework/server"
 	"github.com/xxzhwl/gaia/framework/server/account"
-	"gorm.io/gorm"
-	"time"
 )
 
 type AddUserRequest struct {

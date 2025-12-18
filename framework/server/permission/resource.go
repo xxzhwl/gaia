@@ -3,6 +3,7 @@ package permission
 import (
 	"context"
 	"errors"
+
 	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/framework/server"
 )
@@ -11,6 +12,7 @@ type AddResourceRequest struct {
 	ResourceType string `json:"resource_type" require:"1"`
 	ResourceName string `json:"resource_name" require:"1"`
 	Uri          string `json:"uri" require:"1"`
+	Actions      string `json:"actions" require:"1"`
 
 	Ctx context.Context
 }
@@ -24,6 +26,7 @@ func AddResource(req AddResourceRequest) (err error) {
 		ResourceName: req.ResourceName,
 		ResourceType: req.ResourceType,
 		Uri:          req.Uri,
+		Actions:      req.Actions,
 	}
 	tx := db.GetGormDb().WithContext(req.Ctx).Table(TResource).Create(&obj)
 	if tx.Error != nil {
@@ -37,6 +40,7 @@ type UpdateResourceRequest struct {
 	ResourceType string `json:"resource_type"`
 	ResourceName string `json:"resource_name" `
 	Uri          string `json:"uri"`
+	Actions      string `json:"actions"`
 
 	Ctx context.Context
 }
@@ -54,13 +58,14 @@ func UpdateResource(req UpdateResourceRequest) (err error) {
 	if obj.Id == 0 {
 		return errors.New("未查询到该资源")
 	}
-	if req.ResourceType == obj.ResourceType && req.ResourceName == obj.ResourceName && req.Uri == obj.Uri {
+	if req.ResourceType == obj.ResourceType && req.ResourceName == obj.ResourceName && req.Uri == obj.Uri && req.Actions == obj.Actions {
 		return nil
 	}
 	tx = db.GetGormDb().WithContext(req.Ctx).Table(TResource).Where("id = ?", req.ResourceId).Updates(ResourceVo{
 		ResourceName: req.ResourceName,
 		ResourceType: req.ResourceType,
 		Uri:          req.Uri,
+		Actions:      req.Actions,
 	})
 	if tx.Error != nil {
 		return tx.Error

@@ -6,13 +6,16 @@ package asynctask
 import (
 	"context"
 	"fmt"
-	"github.com/xxzhwl/gaia"
-	"github.com/xxzhwl/gaia/framework/logImpl"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/xxzhwl/gaia"
+	"github.com/xxzhwl/gaia/framework/logImpl"
+	"github.com/xxzhwl/gaia/framework/tracer"
+	"github.com/xxzhwl/gaia/gexit"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -71,6 +74,8 @@ type Scheduler struct {
 	l sync.RWMutex
 
 	Logger *logImpl.DefaultLogger
+
+	exitContext context.Context
 }
 
 // NewScheduler 获取一个调度器
@@ -85,7 +90,7 @@ func NewScheduler(theme string, options ...SchedulerOption) *Scheduler {
 		return v
 	}
 
-	s := &Scheduler{}
+	s := &Scheduler{exitContext: gexit.GetExitContext()}
 	s.Apply(options...)
 	s.Theme = theme
 
@@ -125,8 +130,10 @@ func GetScheduler(theme string) *Scheduler {
 }
 
 // Start 启动扫描任务
-func (s *Scheduler) Start() {
+func (s *Scheduler) Start(ctx context.Context) {
+	tracer.SetupTracer(ctx, "asyncTask_"+s.Theme)
 	s.tracer = otel.Tracer("asyncTask_" + s.Theme)
+
 	if atomic.SwapInt32(&s.startFlag, 1) != 0 {
 		return
 	}
@@ -170,37 +177,72 @@ func (s *Scheduler) ReceiveTask(task TaskBaseInfo) (model TaskModel, err error) 
 
 func (s *Scheduler) scanTasks() {
 	for {
-		start, span := s.tracer.Start(context.Background(), "ScanTasks")
-		s.statusInfo.Scans++
-		ids, needContinue, err := findNeedRunTaskIds(s.ScanTaskNum, s.Theme, start)
-		if err != nil {
-			s.Logger.Error("扫描需要运行的任务Id列表失败:" + err.Error())
-			continue
-		}
-		span.End()
-		if len(ids) != 0 {
-			needWorkers := int32(len(ids)) - (atomic.LoadInt32(&s.statusInfo.AllWorkers) - atomic.LoadInt32(&s.statusInfo.
-				RunningWorkers))
-			s.wakeUpWorker(needWorkers)
 
-			newIds := make([]int64, 0)
-			for _, id := range ids {
-				//允许入队才可以
-				ok := s.allowInQueue(id)
-				if ok {
-					//入队抢占成功，入队
-					s.taskIdChan <- id
-					newIds = append(newIds, id)
-				}
-				atomic.AddInt32(&s.statusInfo.PushTasks, 1)
+		select {
+		case <-s.exitContext.Done():
+			gaia.InfoF("Received exit signal,AsyncTask Scans shutting down")
+			return
+
+		case <-time.After(s.ScanTaskInterval):
+			start, span := s.tracer.Start(context.Background(), "ScanTasks")
+			s.statusInfo.Scans++
+			ids, _, err := findNeedRunTaskIds(s.ScanTaskNum, s.Theme, start)
+			if err != nil {
+				s.Logger.Error("扫描需要运行的任务Id列表失败:" + err.Error())
+				continue
 			}
-			s.Logger.InfoF("扫描次数:%d,扫描到待运行的任务:%v", s.statusInfo.Scans, newIds)
+			span.End()
+			if len(ids) != 0 {
+				needWorkers := int32(len(ids)) - (atomic.LoadInt32(&s.statusInfo.AllWorkers) - atomic.LoadInt32(&s.statusInfo.
+					RunningWorkers))
+				s.wakeUpWorker(needWorkers)
+
+				newIds := make([]int64, 0)
+				for _, id := range ids {
+					//允许入队才可以
+					ok := s.allowInQueue(id)
+					if ok {
+						//入队抢占成功，入队
+						s.taskIdChan <- id
+						newIds = append(newIds, id)
+					}
+					atomic.AddInt32(&s.statusInfo.PushTasks, 1)
+				}
+				s.Logger.InfoF("扫描次数:%d,扫描到待运行的任务:%v", s.statusInfo.Scans, newIds)
+			}
 		}
-		if !needContinue {
-			time.Sleep(s.ScanTaskInterval)
-		} else {
-			time.Sleep(50 * time.Millisecond)
-		}
+
+		//start, span := s.tracer.Start(context.Background(), "ScanTasks")
+		//s.statusInfo.Scans++
+		//ids, needContinue, err := findNeedRunTaskIds(s.ScanTaskNum, s.Theme, start)
+		//if err != nil {
+		//	s.Logger.Error("扫描需要运行的任务Id列表失败:" + err.Error())
+		//	continue
+		//}
+		//span.End()
+		//if len(ids) != 0 {
+		//	needWorkers := int32(len(ids)) - (atomic.LoadInt32(&s.statusInfo.AllWorkers) - atomic.LoadInt32(&s.statusInfo.
+		//		RunningWorkers))
+		//	s.wakeUpWorker(needWorkers)
+		//
+		//	newIds := make([]int64, 0)
+		//	for _, id := range ids {
+		//		//允许入队才可以
+		//		ok := s.allowInQueue(id)
+		//		if ok {
+		//			//入队抢占成功，入队
+		//			s.taskIdChan <- id
+		//			newIds = append(newIds, id)
+		//		}
+		//		atomic.AddInt32(&s.statusInfo.PushTasks, 1)
+		//	}
+		//	s.Logger.InfoF("扫描次数:%d,扫描到待运行的任务:%v", s.statusInfo.Scans, newIds)
+		//}
+		//if !needContinue {
+		//	time.Sleep(s.ScanTaskInterval)
+		//} else {
+		//	time.Sleep(50 * time.Millisecond)
+		//}
 	}
 }
 
@@ -224,23 +266,28 @@ func (s *Scheduler) deleteInQueue(taskId int64) {
 
 func (s *Scheduler) monit() {
 	for {
-		if float64(len(s.taskIdChan)/s.TaskIdChanLength) > 0.8 {
-			s.Logger.WarnF("队列将满,%d---%d", len(s.taskIdChan), s.TaskIdChanLength)
-			gaia.SendSystemAlarm(fmt.Sprintf("TaskMgr:%s队列将满", s.Theme),
-				fmt.Sprintf("当前任务队列长度%d-任务队列总长度%d", len(s.taskIdChan), s.TaskIdChanLength))
+		select {
+		case <-s.exitContext.Done():
+			gaia.InfoF("Received exit signal,AsyncTask monitor shutting down")
+			return
+		case <-time.After(5 * time.Second):
+			if float64(len(s.taskIdChan)/s.TaskIdChanLength) > 0.8 {
+				s.Logger.WarnF("队列将满,%d---%d", len(s.taskIdChan), s.TaskIdChanLength)
+				gaia.SendSystemAlarm(fmt.Sprintf("TaskMgr:%s队列将满", s.Theme),
+					fmt.Sprintf("当前任务队列长度%d-任务队列总长度%d", len(s.taskIdChan), s.TaskIdChanLength))
+			}
+
+			pushTasks := atomic.LoadInt32(&s.statusInfo.PushTasks)
+			pullTasks := atomic.LoadInt32(&s.statusInfo.PullTasks)
+			execTasks := atomic.LoadInt32(&s.statusInfo.ExecTasks)
+			successTasks := atomic.LoadInt32(&s.statusInfo.ExecSuccess)
+			failTasks := atomic.LoadInt32(&s.statusInfo.ExecFails)
+			runningWorkers := atomic.LoadInt32(&s.statusInfo.RunningWorkers)
+			allWorkers := atomic.LoadInt32(&s.statusInfo.AllWorkers)
+
+			s.Logger.InfoF("队列任务数%d,入队任务数:%d，拉取任务数:%d,执行任务数:%d,成功任务数:%d,失败任务数:%d,运行中workers:%d,全部workers:%d",
+				len(s.taskIdChan), pushTasks, pullTasks, execTasks, successTasks, failTasks, runningWorkers, allWorkers)
 		}
-
-		pushTasks := atomic.LoadInt32(&s.statusInfo.PushTasks)
-		pullTasks := atomic.LoadInt32(&s.statusInfo.PullTasks)
-		execTasks := atomic.LoadInt32(&s.statusInfo.ExecTasks)
-		successTasks := atomic.LoadInt32(&s.statusInfo.ExecSuccess)
-		failTasks := atomic.LoadInt32(&s.statusInfo.ExecFails)
-		runningWorkers := atomic.LoadInt32(&s.statusInfo.RunningWorkers)
-		allWorkers := atomic.LoadInt32(&s.statusInfo.AllWorkers)
-
-		s.Logger.InfoF("队列任务数%d,入队任务数:%d，拉取任务数:%d,执行任务数:%d,成功任务数:%d,失败任务数:%d,运行中workers:%d,全部workers:%d",
-			len(s.taskIdChan), pushTasks, pullTasks, execTasks, successTasks, failTasks, runningWorkers, allWorkers)
-		time.Sleep(5 * time.Second)
 	}
 }
 

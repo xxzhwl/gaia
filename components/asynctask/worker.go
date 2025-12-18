@@ -6,9 +6,10 @@ package asynctask
 import (
 	"context"
 	"fmt"
-	"github.com/xxzhwl/gaia"
 	"sync/atomic"
 	"time"
+
+	"github.com/xxzhwl/gaia"
 )
 
 type Worker struct {
@@ -41,6 +42,9 @@ func (s *Scheduler) work() {
 	start, span := s.tracer.Start(context.Background(), "AsyncTaskWorker"+gaia.GetGoRoutineId())
 	for {
 		select {
+		case <-s.exitContext.Done():
+			gaia.InfoF("Received exit signal,AsyncTask work shutting down")
+			return
 		case taskId := <-s.taskIdChan:
 			atomic.AddInt32(&s.statusInfo.PullTasks, 1)
 			s.exec(taskId, start)
@@ -60,15 +64,15 @@ func (s *Scheduler) work() {
 func (s *Scheduler) workerNeedExit() bool {
 	s.lastRemoveWorkerRw.Lock()
 	defer s.lastRemoveWorkerRw.Unlock()
-	
+
 	// 小于10个不缩容
 	allWorkers := atomic.LoadInt32(&s.statusInfo.AllWorkers)
 	runningWorkers := atomic.LoadInt32(&s.statusInfo.RunningWorkers)
-	
+
 	if allWorkers <= 10 {
 		return false
 	}
-	
+
 	// 如果当前任务队列任务数/当前空闲中的worker<1且上次运行时间超过10秒，就可以缩容了
 	idleWorkers := allWorkers - runningWorkers
 	if int32(len(s.taskIdChan)) < idleWorkers {

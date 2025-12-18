@@ -4,9 +4,10 @@
 package asynctask
 
 import (
+	"time"
+
 	"github.com/xxzhwl/gaia"
 	"gorm.io/gorm/clause"
-	"time"
 )
 
 const heatBeatTable = "async_task_heartbeat"
@@ -23,6 +24,9 @@ type HeartBeatModel struct {
 func (s *Scheduler) heartBeat() {
 	for {
 		select {
+		case <-s.exitContext.Done():
+			gaia.InfoF("Received exit signal,AsyncTask heartBeat shutting down")
+			return
 		case <-time.After(time.Second * 5):
 			taskIds, err := FindDeadTask()
 			if err != nil {

@@ -5,8 +5,9 @@ package asynctask
 
 import (
 	"context"
-	"github.com/xxzhwl/gaia"
 	"time"
+
+	"github.com/xxzhwl/gaia"
 )
 
 // TaskExecModel 任务执行记录
@@ -19,7 +20,7 @@ type TaskExecModel struct {
 	LastRunTime     time.Time
 	LastRunEndTime  time.Time
 	LastRunDuration int64
-	RunLogId        string
+	LogId           string
 }
 
 func (m *TaskExecModel) TableName() string {

@@ -6,8 +6,9 @@ package asynctask
 import (
 	"context"
 	"database/sql"
-	"github.com/xxzhwl/gaia"
 	"time"
+
+	"github.com/xxzhwl/gaia"
 )
 
 var taskTable = "asynctasks"
@@ -26,6 +27,7 @@ type TaskModel struct {
 	RetryTime       int
 	LastResult      string
 	LastErrMsg      string
+	LogId           string
 }
 
 // TaskBaseInfo 任务基本信息
@@ -107,7 +109,7 @@ func updateTaskSuccess(taskId int64, res string, startTime time.Time, ctx contex
 	tx := db.GetGormDb().WithContext(ctx).Table(taskTable).Where(map[string]any{"id": taskId}).
 		Updates(map[string]any{"task_status": TaskStatusSuccess.String(),
 			"last_result": res, "last_run_time": startTime, "last_run_end_time": endTime,
-			"last_run_duration": endTime.Sub(startTime).Milliseconds()})
+			"last_run_duration": endTime.Sub(startTime).Milliseconds(), "log_id": gaia.GetContextTrace().Id})
 	if tx.Error != nil {
 		return tx.Error
 	}
@@ -118,7 +120,7 @@ func updateTaskSuccess(taskId int64, res string, startTime time.Time, ctx contex
 		LastRunTime:     startTime,
 		LastRunEndTime:  endTime,
 		LastRunDuration: endTime.Sub(startTime).Milliseconds(),
-		RunLogId:        gaia.GetContextTrace().Id,
+		LogId:           gaia.GetContextTrace().Id,
 	}, ctx)
 }
 
@@ -130,7 +132,7 @@ func updateTaskFailed(taskId int64, res string, startTime time.Time, ctx context
 	}
 	tx := db.GetGormDb().WithContext(ctx).Table(taskTable).Where(map[string]any{"id": taskId}).
 		Updates(map[string]any{"task_status": TaskStatusFailed.String(), "last_err_msg": res,
-			"last_run_time": startTime, "last_run_end_time": endTime,
+			"last_run_time": startTime, "last_run_end_time": endTime, "log_id": gaia.GetContextTrace().Id,
 			"last_run_duration": endTime.Sub(startTime).Milliseconds()})
 	if tx.Error != nil {
 		return tx.Error
@@ -142,7 +144,7 @@ func updateTaskFailed(taskId int64, res string, startTime time.Time, ctx context
 		LastRunTime:     startTime,
 		LastRunEndTime:  endTime,
 		LastRunDuration: endTime.Sub(startTime).Milliseconds(),
-		RunLogId:        gaia.GetContextTrace().Id,
+		LogId:           gaia.GetContextTrace().Id,
 	}, ctx)
 }
 
@@ -154,7 +156,7 @@ func updateTaskWait(taskId int64, res string, startTime time.Time, ctx context.C
 	}
 	tx := db.GetGormDb().WithContext(ctx).Table(taskTable).Where(map[string]any{"id": taskId}).
 		Updates(map[string]any{"task_status": TaskStatusWait.String(), "last_err_msg": res,
-			"last_run_time": startTime, "last_run_end_time": endTime,
+			"last_run_time": startTime, "last_run_end_time": endTime, "log_id": gaia.GetContextTrace().Id,
 			"last_run_duration": endTime.Sub(startTime).Milliseconds()})
 	if tx.Error != nil {
 		return tx.Error
@@ -166,7 +168,7 @@ func updateTaskWait(taskId int64, res string, startTime time.Time, ctx context.C
 		LastRunTime:     startTime,
 		LastRunEndTime:  endTime,
 		LastRunDuration: endTime.Sub(startTime).Milliseconds(),
-		RunLogId:        gaia.GetContextTrace().Id,
+		LogId:           gaia.GetContextTrace().Id,
 	}, ctx)
 }
 
@@ -178,7 +180,7 @@ func updateTaskRetry(taskInfo TaskModel, res string, startTime time.Time, ctx co
 	}
 	tx := db.GetGormDb().WithContext(ctx).Table(taskTable).Where(map[string]any{"id": taskInfo.Id}).
 		Updates(map[string]any{"task_status": TaskStatusRetry.String(), "last_result": res,
-			"retry_time":    taskInfo.RetryTime + 1,
+			"retry_time": taskInfo.RetryTime + 1, "log_id": gaia.GetContextTrace().Id,
 			"last_run_time": startTime, "last_run_end_time": endTime,
 			"last_run_duration": endTime.Sub(startTime).Milliseconds()})
 	if tx.Error != nil {
@@ -191,7 +193,7 @@ func updateTaskRetry(taskInfo TaskModel, res string, startTime time.Time, ctx co
 		LastRunTime:     startTime,
 		LastRunEndTime:  endTime,
 		LastRunDuration: endTime.Sub(startTime).Milliseconds(),
-		RunLogId:        gaia.GetContextTrace().Id,
+		LogId:           gaia.GetContextTrace().Id,
 	}, ctx)
 }
 

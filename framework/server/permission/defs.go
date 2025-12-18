@@ -14,6 +14,7 @@ type ResourceVo struct {
 	ResourceName string `json:"resource_name"`
 	ResourceType string `json:"resource_type"`
 	Uri          string `json:"uri"`
+	Actions      string `json:"actions"`
 }
 
 type RoleVo struct {
