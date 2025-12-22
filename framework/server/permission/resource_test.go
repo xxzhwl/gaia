@@ -1,6 +1,10 @@
 package permission
 
-import "testing"
+import (
+	"testing"
+
+	_ "github.com/joho/godotenv/autoload"
+)
 
 func TestAddResource(t *testing.T) {
 	type args struct {

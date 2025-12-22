@@ -172,28 +172,13 @@ func (a Account) Login(req LoginRequest) (resp LoginResponse, err error) {
 
 	//比对成功,生成Token返回信息
 	jwtConf := server.NewJwtConf("JwtConf")
-	token, err := server.NewJwtAuth(jwtConf).
+	token, refreshToken, err := server.NewJwtAuth(jwtConf).
 		GenerateToken(strconv.FormatInt(userInfo.Id, 10))
-	if err != nil {
-		return
-	}
-	//生成refreshToken
-	refreshConf := server.NewJwtConf("JwtRefreshConf")
-	refreshToken, err := server.NewJwtAuth(refreshConf).
-		GenerateRefreshToken(strconv.FormatInt(userInfo.Id, 10))
 	if err != nil {
 		return
 	}
 
 	client := redis.NewFrameworkClient().WithCtx(req.Ctx)
-	if err = client.SetEx(fmt.Sprintf("token-%s", token), userInfo.Id, time.Duration(jwtConf.DurationMinute)*time.
-		Minute); err != nil {
-		return
-	}
-	if err = client.SetEx(fmt.Sprintf("refreshToken-%s", refreshToken), userInfo.Id,
-		time.Duration(refreshConf.DurationMinute)*time.Minute); err != nil {
-		return
-	}
 	if _, err = client.Incr(CurrentLoginUserNumKey); err != nil {
 		return
 	}
@@ -339,28 +324,13 @@ func (a Account) Register(req RegisterRequest) (resp RegisterResponse, err error
 	}
 
 	jwtConf := server.NewJwtConf("JwtConf")
-	token, err := server.NewJwtAuth(jwtConf).
+	token, refreshToken, err := server.NewJwtAuth(jwtConf).
 		GenerateToken(strconv.FormatInt(userInfo.Id, 10))
-	if err != nil {
-		return
-	}
-	//生成refreshToken
-	refreshConf := server.NewJwtConf("JwtRefreshConf")
-	refreshToken, err := server.NewJwtAuth(refreshConf).
-		GenerateRefreshToken(strconv.FormatInt(userInfo.Id, 10))
 	if err != nil {
 		return
 	}
 
 	client := redis.NewFrameworkClient().WithCtx(req.Ctx)
-	if err = client.SetEx(fmt.Sprintf("token-%s", token), userInfo.Id, time.Duration(jwtConf.DurationMinute)*time.
-		Minute); err != nil {
-		return
-	}
-	if err = client.SetEx(fmt.Sprintf("refreshToken-%s", refreshToken), userInfo.Id,
-		time.Duration(refreshConf.DurationMinute)*time.Minute); err != nil {
-		return
-	}
 	if _, err = client.Incr(CurrentLoginUserNumKey); err != nil {
 		return
 	}
@@ -500,12 +470,11 @@ type RefreshTokenResponse struct {
 
 func (a Account) RefreshToken(request RefreshTokenRequest) (resp RefreshTokenResponse, err error) {
 	//1.从Token中获取对应的用户Id
-	refreshAuthUtil := server.NewJwtAuth(server.NewJwtConf("JwtRefreshConf"))
-	ck, err := refreshAuthUtil.GetCk(request.RefreshToken)
+	refreshAuthUtil := server.NewJwtAuth(server.NewJwtConf("JwtConf"))
+	uid, err := refreshAuthUtil.GetCk(request.RefreshToken)
 	if err != nil {
 		return
 	}
-	uid := server.GetUserKeyFromCk(ck)
 	if len(uid) == 0 {
 		err = errors.New("refreshToken不符合预期")
 		return
@@ -531,13 +500,8 @@ func (a Account) RefreshToken(request RefreshTokenRequest) (resp RefreshTokenRes
 	//4.如果是，返回新Token
 	jwtConf := server.NewJwtConf("JwtConf")
 	authUtil := server.NewJwtAuth(jwtConf)
-	token, err := authUtil.GenerateToken(strconv.FormatInt(user.Id, 10))
+	token, err := authUtil.GenerateAccessToken(strconv.FormatInt(user.Id, 10))
 	if err != nil {
-		return
-	}
-	client := redis.NewFrameworkClient().WithCtx(request.Ctx)
-	if err = client.SetEx(fmt.Sprintf("token-%s", token), uid, time.Duration(jwtConf.DurationMinute)*time.
-		Minute); err != nil {
 		return
 	}
 
@@ -554,16 +518,10 @@ type LogOutAccountRequest struct {
 // LogOutAccount 注销账户
 func (a Account) LogOutAccount(req LogOutAccountRequest) (err error) {
 	repo := NewUserRepo(req.Ctx)
-	u := UserBaseVo{Id: req.UserId, IsLogOut: 1, LogOutTime: gaia.Date(gaia.DateTimeFormat),
+	logOutTime := gaia.Date(gaia.DateTimeFormat)
+	u := UserBaseVo{Id: req.UserId, IsLogOut: 1, LogOutTime: &logOutTime,
 		LogOutTimeStamp: time.Now().UnixMilli()}
-	fmt.Println(111111)
-	gaia.PrettyPrint(u)
 	if errTemp := repo.UpdateUserInfo(u); errTemp != nil {
-		return errTemp
-	}
-
-	cli := redis.NewFrameworkClient().WithCtx(req.Ctx)
-	if errTemp := cli.Del(fmt.Sprintf("token-%s", req.Token)); errTemp != nil {
 		return errTemp
 	}
 	return

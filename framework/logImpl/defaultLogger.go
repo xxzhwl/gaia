@@ -141,9 +141,11 @@ func (d *DefaultLogger) log(logString string) {
 		}
 	}
 
-	g.Go(func() {
-		d.logLocalLogFile(logString)
-	})
+	if !gaia.GetSafeConfBool("Logger.DisableLocalFile") {
+		g.Go(func() {
+			d.logLocalLogFile(logString)
+		})
+	}
 }
 
 func (d *DefaultLogger) logLocalLogFile(logString string) {

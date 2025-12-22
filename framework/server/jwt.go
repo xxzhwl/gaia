@@ -2,25 +2,23 @@ package server
 
 import (
 	"errors"
-	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/xxzhwl/gaia"
-	"github.com/xxzhwl/gaia/components/redis"
 	"github.com/xxzhwl/gaia/errwrap"
 )
 
 type JwtConf struct {
-	Method         string
-	SigningKey     string
-	Issuer         string
-	Subject        string
-	DurationMinute int64
+	Method                     string
+	SigningKey                 string
+	Issuer                     string
+	Subject                    string
+	AccessTokenDurationMinute  int64
+	RefreshTokenDurationMinute int64
 }
 
 type GaiaClaims struct {
@@ -36,7 +34,8 @@ func DefaultJwtConf() JwtConf {
 		Issuer:     "gaia-framework",
 		Subject:    "gaia-sub",
 		// 增加默认有效期
-		DurationMinute: 60,
+		AccessTokenDurationMinute:  10,
+		RefreshTokenDurationMinute: 60 * 24 * 7,
 	}
 }
 
@@ -69,7 +68,20 @@ func NewJwtAuth(conf JwtConf) *JwtAuth {
 }
 
 // GenerateToken 生成Token
-func (j *JwtAuth) GenerateToken(ckv string) (string, error) {
+func (j *JwtAuth) GenerateToken(ckv string) (string, string, error) {
+	token, err := j.GenerateAccessToken(ckv)
+	if err != nil {
+		return "", "", errors.New("failed to generate access token")
+	}
+	refreshToken, err := j.GenerateRefreshToken(ckv)
+	if err != nil {
+		return "", "", errors.New("failed to generate refresh token")
+	}
+
+	return token, refreshToken, nil
+}
+
+func (j *JwtAuth) GenerateAccessToken(ckv string) (string, error) {
 	// 添加验证确保密钥不为空
 	if j.conf.SigningKey == "" {
 		return "", errors.New("JWT signing key cannot be empty")
@@ -78,28 +90,32 @@ func (j *JwtAuth) GenerateToken(ckv string) (string, error) {
 	claims := jwt.NewWithClaims(j.SigningMethod, GaiaClaims{jwt.RegisteredClaims{
 		Issuer:    j.conf.Issuer,
 		Subject:   j.conf.Subject,
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(j.conf.DurationMinute) * time.Minute)),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(j.conf.AccessTokenDurationMinute) * time.Minute)),
 		IssuedAt:  &jwt.NumericDate{Time: time.Now()},
 		ID:        gaia.GetUUID(),
 	}, ckv})
 
-	token, err := claims.SignedString([]byte(j.conf.SigningKey))
-	if err != nil {
-		return "", err
-	}
-	return token, nil
+	return claims.SignedString([]byte(j.conf.SigningKey))
 }
 
-// GenerateRefreshToken 生成Refresh-Token
 func (j *JwtAuth) GenerateRefreshToken(ckv string) (string, error) {
 	// 添加验证确保密钥不为空
 	if j.conf.SigningKey == "" {
 		return "", errors.New("JWT signing key cannot be empty")
 	}
-	return j.GenerateToken(ckv + "-refresh")
+
+	claims := jwt.NewWithClaims(j.SigningMethod, GaiaClaims{jwt.RegisteredClaims{
+		Issuer:    j.conf.Issuer,
+		Subject:   j.conf.Subject,
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(j.conf.RefreshTokenDurationMinute) * time.Minute)),
+		IssuedAt:  &jwt.NumericDate{Time: time.Now()},
+		ID:        gaia.GetUUID(),
+	}, ckv})
+
+	return claims.SignedString([]byte(j.conf.SigningKey))
 }
 
-func (j *JwtAuth) Auth() app.HandlerFunc {
+func Auth(j *JwtAuth) app.HandlerFunc {
 	return MakePlugin(j.auth)
 }
 
@@ -114,22 +130,9 @@ func (j *JwtAuth) auth(c Request) (err error) {
 		return errwrap.Error(errwrap.EcAuthErr, errors.New("鉴权失败"))
 	}
 
-	client := redis.NewFrameworkClient().WithCtx(c.TraceContext)
-	uid, err := client.GetString(fmt.Sprintf("token-%s", auth))
-	if err != nil {
-		return errwrap.Error(errwrap.EcAuthErr, errors.New("鉴权失败"))
-	}
-	if len(uid) == 0 {
-		return errwrap.Error(errwrap.EcAuthErr, errors.New("鉴权失败"))
-	}
-
 	ck, err := j.GetCk(auth)
 	if err != nil {
 		return err
-	}
-
-	if IsRefreshTokenKey(ck) {
-		return errwrap.Error(errwrap.EcAuthErr, errors.New("鉴权失败"))
 	}
 
 	c.c.Set("userKey", ck)
@@ -147,7 +150,7 @@ func (j *JwtAuth) GetCk(token string) (ck string, err error) {
 	})
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
-			return "", errwrap.Error(errwrap.EcTokenExpired, errors.New("token过期"))
+			return "", errwrap.Error(errwrap.EcAuthErr, errors.New("token过期"))
 		}
 		return "", errwrap.Error(errwrap.EcAuthErr, errors.New("鉴权失败"))
 	}
@@ -157,17 +160,4 @@ func (j *JwtAuth) GetCk(token string) (ck string, err error) {
 	} else {
 		return v, nil
 	}
-}
-
-// IsRefreshTokenKey 判断是不是refreshToken的用户信息
-func IsRefreshTokenKey(ck string) bool {
-	return strings.HasSuffix(ck, "-refresh")
-}
-
-// GetUserKeyFromCk 判断是不是refreshToken的用户信息
-func GetUserKeyFromCk(ck string) string {
-	if IsRefreshTokenKey(ck) {
-		return strings.ReplaceAll(ck, "-refresh", "")
-	}
-	return ""
 }
