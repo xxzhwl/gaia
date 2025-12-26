@@ -9,15 +9,16 @@ import (
 	"crypto/tls"
 	"encoding/pem"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"time"
+
 	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/framework/logImpl"
 	"github.com/xxzhwl/gaia/framework/tracer"
 	"go.opentelemetry.io/otel/attribute"
 	otel "go.opentelemetry.io/otel/trace"
-	"io"
-	"net/http"
-	"os"
-	"time"
 )
 
 const (
@@ -105,7 +106,7 @@ func (h *HttpRequest) WithCAPem(filePath string) *HttpRequest {
 }
 
 func (h *HttpRequest) WithTitle(title string) *HttpRequest {
-	h.Title = title
+	h.Title = "HttpRequest-" + title
 	h.Logger.SetTitle(title)
 	return h
 }
@@ -162,6 +163,7 @@ func (h *HttpRequest) Do() (respBody []byte, statusCode int, err error) {
 			return
 		}
 		time.Sleep(h.RetryInterval)
+		gaia.SendSystemAlarm(h.Title, err.Error())
 		h.Logger.WarnF("[%s-%s] Retry Times:%d", h.Url, h.Title, i)
 	}
 	return

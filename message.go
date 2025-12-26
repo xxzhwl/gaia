@@ -1,5 +1,9 @@
 package gaia
 
+import (
+	"fmt"
+)
+
 /*
 消息发送服务基础实现
 @author wanlizhan
@@ -24,7 +28,13 @@ func SendSystemAlarm(title, content string) error {
 		Log(LogWarnLevel, "IMessage interface not implemented")
 		return nil
 	}
-	return Message.SendSystemAlarm(title, content)
+	titleTpl := fmt.Sprintf("【%s】%s\n", GetSystemEnName(), title)
+	contentTpl := fmt.Sprintf("%s\n日志Id:[%s]\nTraceId:[%s]\n时间:[%s]",
+		content,
+		NewContextTrace().GetId(),
+		NewContextTrace().GetTraceId(),
+		Date(DateTimeMillsFormat))
+	return Message.SendSystemAlarm(titleTpl, contentTpl)
 }
 
 // SendPanicAlarm 发送panic异常告警

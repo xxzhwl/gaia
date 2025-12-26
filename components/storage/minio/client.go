@@ -7,13 +7,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/xxzhwl/gaia"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
+
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/xxzhwl/gaia"
 )
 
 type Client struct {

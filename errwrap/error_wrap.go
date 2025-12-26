@@ -7,7 +7,6 @@ package errwrap
 
 import (
 	"errors"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -23,10 +22,10 @@ import (
  * 考虑到有些较为严重的错误会有特殊处理逻辑，这里给出一个范围指定这些错误
  */
 const (
-	EcDefaultErr  int64 = 10000                   //默认错误码
-	EcMajorMinErr int64 = 20000                   //严重错误
-	EcAuthErr     int64 = http.StatusUnauthorized //鉴权错误
-	EcMajorMaxErr int64 = 29999                   //严重错误
+	EcDefaultErr  int64 = 10000 //默认错误码
+	EcMajorMinErr int64 = 20000 //严重错误
+	EcAuthErr     int64 = 20001 //鉴权错误
+	EcMajorMaxErr int64 = 29999 //严重错误
 )
 
 var codeReg *regexp.Regexp

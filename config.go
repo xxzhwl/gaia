@@ -329,7 +329,7 @@ func LoadConfToObjWithErr(key string, obj any) error {
 	return json.Unmarshal(marshal, &obj)
 }
 
-func LoadConfToObjWith(key string, obj any) {
+func LoadConfToObj(key string, obj any) {
 	LoadConfToObjWithErr(key, obj)
 }
 
