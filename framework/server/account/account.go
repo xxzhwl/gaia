@@ -143,6 +143,16 @@ type LoginRequest struct {
 	Identity     string `memo:"身份验证:用户名、手机号（区号+手机号）、邮箱" require:"1" json:"identity"`
 	Secret       string `memo:"登录验证密钥:密码、验证码" require:"1" json:"secret"`
 
+	// 设备信息
+	DeviceType string `memo:"设备类型[web:网页端;ios:iOS;android:安卓;小程序:mini_program]" json:"deviceType"`
+	DeviceId   string `memo:"设备唯一标识" json:"deviceId"`
+	DeviceName string `memo:"设备名称(如:iPhone 14 Pro)" json:"deviceName"`
+	OsVersion  string `memo:"操作系统版本" json:"osVersion"`
+	AppVersion string `memo:"应用版本号" json:"appVersion"`
+	IpAddress  string `memo:"登录IP地址" json:"ipAddress"`
+	Location   string `memo:"登录地理位置" json:"location"`
+	UserAgent  string `memo:"用户代理信息" json:"userAgent"`
+
 	Ctx context.Context
 }
 
@@ -175,6 +185,29 @@ func (a Account) Login(req LoginRequest) (resp LoginResponse, err error) {
 	token, refreshToken, err := server.NewJwtAuth(jwtConf).
 		GenerateToken(strconv.FormatInt(userInfo.Id, 10))
 	if err != nil {
+		return
+	}
+
+	// 持久化 RefreshToken 到数据库
+	tokenRepo := NewTokenRepo(req.Ctx)
+	now := time.Now()
+	expiredTime := now.Add(time.Duration(jwtConf.RefreshTokenDurationMinute) * time.Minute) // 默认7天过期
+	tokenVo := UserTokenVo{
+		UserId:         userInfo.Id,
+		RefreshToken:   refreshToken,
+		DeviceType:     req.DeviceType,
+		DeviceId:       req.DeviceId,
+		DeviceName:     req.DeviceName,
+		OsVersion:      req.OsVersion,
+		AppVersion:     req.AppVersion,
+		IpAddress:      req.IpAddress,
+		Location:       req.Location,
+		UserAgent:      req.UserAgent,
+		IsActive:       1,
+		ExpiredTime:    expiredTime,
+		LastActiveTime: now,
+	}
+	if _, err = tokenRepo.AddUserToken(tokenVo); err != nil {
 		return
 	}
 
@@ -301,7 +334,23 @@ func loginByMailCode(ctx context.Context, mailBox, code string) (user UserBaseVo
 
 // RegisterRequest
 // 注册请求,注册我们一般采用用户名+密码，或者手机号+验证码，或者邮箱+验证码
-type RegisterRequest LoginRequest
+type RegisterRequest struct {
+	IdentityType int    `memo:"验证方式(1:用户名+密码;2:手机号+验证码;3:邮箱+验证码)" require:"1" range:"1,2,3" json:"identityType"`
+	Identity     string `memo:"身份验证:用户名、手机号（区号+手机号）、邮箱" require:"1" json:"identity"`
+	Secret       string `memo:"登录验证密钥:密码、验证码" require:"1" json:"secret"`
+
+	// 设备信息
+	DeviceType string `memo:"设备类型[web:网页端;ios:iOS;android:安卓;小程序:mini_program]" json:"deviceType"`
+	DeviceId   string `memo:"设备唯一标识" json:"deviceId"`
+	DeviceName string `memo:"设备名称(如:iPhone 14 Pro)" json:"deviceName"`
+	OsVersion  string `memo:"操作系统版本" json:"osVersion"`
+	AppVersion string `memo:"应用版本号" json:"appVersion"`
+	IpAddress  string `memo:"登录IP地址" json:"ipAddress"`
+	Location   string `memo:"登录地理位置" json:"location"`
+	UserAgent  string `memo:"用户代理信息" json:"userAgent"`
+
+	Ctx context.Context
+}
 
 type RegisterResponse LoginResponse
 
@@ -327,6 +376,29 @@ func (a Account) Register(req RegisterRequest) (resp RegisterResponse, err error
 	token, refreshToken, err := server.NewJwtAuth(jwtConf).
 		GenerateToken(strconv.FormatInt(userInfo.Id, 10))
 	if err != nil {
+		return
+	}
+
+	// 持久化 RefreshToken 到数据库
+	tokenRepo := NewTokenRepo(req.Ctx)
+	now := time.Now()
+	expiredTime := now.Add(time.Duration(jwtConf.RefreshTokenDurationMinute) * time.Minute) // 默认7天过期
+	tokenVo := UserTokenVo{
+		UserId:         userInfo.Id,
+		RefreshToken:   refreshToken,
+		DeviceType:     req.DeviceType,
+		DeviceId:       req.DeviceId,
+		DeviceName:     req.DeviceName,
+		OsVersion:      req.OsVersion,
+		AppVersion:     req.AppVersion,
+		IpAddress:      req.IpAddress,
+		Location:       req.Location,
+		UserAgent:      req.UserAgent,
+		IsActive:       1,
+		ExpiredTime:    expiredTime,
+		LastActiveTime: now,
+	}
+	if _, err = tokenRepo.AddUserToken(tokenVo); err != nil {
 		return
 	}
 
@@ -460,12 +532,13 @@ func registerByPwd(ctx context.Context, identity, secret string) (UserBaseVo, er
 
 type RefreshTokenRequest struct {
 	RefreshToken string `memo:"刷新Token" require:"1" json:"refreshToken"`
-	UserName     string `memo:"用户名" require:"1" json:"userName"`
+	DeviceId     string `memo:"设备唯一标识" require:"1" json:"deviceId"`
 	Ctx          context.Context
 }
 
 type RefreshTokenResponse struct {
-	NewToken string `json:"newToken"`
+	NewToken     string `json:"newToken"`
+	RefreshToken string `json:"refreshToken"`
 }
 
 func (a Account) RefreshToken(request RefreshTokenRequest) (resp RefreshTokenResponse, err error) {
@@ -479,33 +552,97 @@ func (a Account) RefreshToken(request RefreshTokenRequest) (resp RefreshTokenRes
 		err = errors.New("refreshToken不符合预期")
 		return
 	}
-	//2.根据用户名查出对应的用户Id，先对比是否是一个用户
-	user, err := NewUserRepo(request.Ctx).FindUserByUserName(request.UserName)
-	if err != nil {
-		return
-	}
-	//3.如果不是就要报错
-	if strconv.FormatInt(user.Id, 10) != uid {
-		err = errors.New("refreshToken不符合预期")
-		return
-	}
-	if user.IsBan == 1 {
-		err = fmt.Errorf("用户名%s被封禁", request.UserName)
-		return
-	}
-	if user.IsLogOut == 1 {
-		err = fmt.Errorf("用户名%s已注销", request.UserName)
-		return
-	}
-	//4.如果是，返回新Token
-	jwtConf := server.NewJwtConf("JwtConf")
-	authUtil := server.NewJwtAuth(jwtConf)
-	token, err := authUtil.GenerateAccessToken(strconv.FormatInt(user.Id, 10))
+
+	//2.验证 RefreshToken 是否存在于数据库中且有效
+	tokenRepo := NewTokenRepo(request.Ctx)
+	tokenRecord, err := tokenRepo.FindTokenByRefreshToken(request.RefreshToken)
 	if err != nil {
 		return
 	}
 
-	return RefreshTokenResponse{token}, nil
+	// 检查 token 是否存在且活跃
+	if tokenRecord.Id == 0 {
+		err = errors.New("refreshToken无效或已失效")
+		return
+	}
+	if tokenRecord.IsActive != 1 {
+		err = errors.New("refreshToken已失效")
+		return
+	}
+
+	// 验证 token 是否匹配设备
+	if request.DeviceId != "" && tokenRecord.DeviceId != "" && tokenRecord.DeviceId != request.DeviceId {
+		err = errors.New("设备不匹配")
+		return
+	}
+
+	//3.检查 token 是否过期
+	if time.Now().After(tokenRecord.ExpiredTime) {
+		err = errors.New("refreshToken已过期")
+		return
+	}
+
+	//4.根据用户Id查出用户信息，验证用户状态
+	userId, _ := strconv.ParseInt(uid, 10, 64)
+	user, err := NewUserRepo(request.Ctx).FindUserById(userId)
+	if err != nil {
+		return
+	}
+
+	// 验证 token 中的 userId 是否与数据库中的 userId 一致
+	if user.Id != tokenRecord.UserId {
+		err = errors.New("refreshToken不符合预期")
+		return
+	}
+
+	if user.IsBan == 1 {
+		err = fmt.Errorf("用户%s被封禁", user.UserName)
+		return
+	}
+	if user.IsLogOut == 1 {
+		err = fmt.Errorf("用户%s已注销", user.UserName)
+		return
+	}
+
+	//5.生成新的 Token 和 RefreshToken
+	jwtConf := server.NewJwtConf("JwtConf")
+	authUtil := server.NewJwtAuth(jwtConf)
+	newToken, newRefreshToken, err := authUtil.GenerateToken(strconv.FormatInt(user.Id, 10))
+	if err != nil {
+		return
+	}
+
+	//6.更新数据库中的 RefreshToken（删除旧的，添加新的）
+	if _, err = tokenRepo.DeleteTokenByRefreshToken(request.RefreshToken); err != nil {
+		return
+	}
+
+	// 添加新的 RefreshToken 记录
+	now := time.Now()
+	expiredTimeNew := now.Add(time.Duration(jwtConf.RefreshTokenDurationMinute) * time.Minute) // 默认7天过期
+	newTokenVo := UserTokenVo{
+		UserId:         user.Id,
+		RefreshToken:   newRefreshToken,
+		DeviceType:     tokenRecord.DeviceType,
+		DeviceId:       tokenRecord.DeviceId,
+		DeviceName:     tokenRecord.DeviceName,
+		OsVersion:      tokenRecord.OsVersion,
+		AppVersion:     tokenRecord.AppVersion,
+		IpAddress:      tokenRecord.IpAddress,
+		Location:       tokenRecord.Location,
+		UserAgent:      tokenRecord.UserAgent,
+		IsActive:       1,
+		ExpiredTime:    expiredTimeNew,
+		LastActiveTime: now,
+	}
+	if _, err = tokenRepo.AddUserToken(newTokenVo); err != nil {
+		return
+	}
+
+	return RefreshTokenResponse{
+		NewToken:     newToken,
+		RefreshToken: newRefreshToken,
+	}, nil
 }
 
 // LogOutAccountRequest 注销账户参数
@@ -529,11 +666,91 @@ func (a Account) LogOutAccount(req LogOutAccountRequest) (err error) {
 
 // ExitAccountRequest 退出账户参数
 type ExitAccountRequest struct {
-	Ctx context.Context
+	RefreshToken string `json:"refreshToken" require:"1" memo:"刷新Token"`
+	DeviceId     string `json:"deviceId" require:"1" memo:"设备唯一标识"`
+	Ctx          context.Context
 }
 
-// ExitAccount 退出账户
-func (a Account) ExitAccount() (err error) {
+// ExitAccount 退出账户（仅退出当前设备）
+func (a Account) ExitAccount(req ExitAccountRequest) (err error) {
+	tokenRepo := NewTokenRepo(req.Ctx)
+
+	// 根据 RefreshToken 删除对应的 token 记录
+	if _, err = tokenRepo.DeleteTokenByRefreshToken(req.RefreshToken); err != nil {
+		return
+	}
+
+	return nil
+}
+
+// GetLoginDevicesRequest 获取登录设备列表参数
+type GetLoginDevicesRequest struct {
+	UserId int64 `json:"userId" require:"1" memo:"用户id"`
+	Ctx    context.Context
+}
+
+// GetLoginDevicesResponse 获取登录设备列表响应
+type GetLoginDevicesResponse struct {
+	Devices []UserTokenBaseVo `json:"devices"`
+}
+
+// GetLoginDevices 获取用户的登录设备列表
+func (a Account) GetLoginDevices(req GetLoginDevicesRequest) (resp GetLoginDevicesResponse, err error) {
+	tokenRepo := NewTokenRepo(req.Ctx)
+	tokens, err := tokenRepo.FindActiveTokensByUserId(req.UserId)
+	if err != nil {
+		return
+	}
+
+	devices := make([]UserTokenBaseVo, 0, len(tokens))
+	for _, token := range tokens {
+		devices = append(devices, UserTokenBaseVo{
+			Id:             token.Id,
+			UserId:         token.UserId,
+			DeviceType:     token.DeviceType,
+			DeviceId:       token.DeviceId,
+			DeviceName:     token.DeviceName,
+			OsVersion:      token.OsVersion,
+			AppVersion:     token.AppVersion,
+			IpAddress:      token.IpAddress,
+			Location:       token.Location,
+			UserAgent:      token.UserAgent,
+			LastActiveTime: token.LastActiveTime.Format(time.DateTime),
+			CreateTime:     token.CreateTime.Format(time.DateTime),
+			UpdateTime:     token.UpdateTime.Format(time.DateTime),
+		})
+	}
+
+	return GetLoginDevicesResponse{Devices: devices}, nil
+}
+
+// ForceLogoutDeviceRequest 强制下线设备参数
+type ForceLogoutDeviceRequest struct {
+	TokenId int64 `json:"tokenId" require:"1" memo:"token记录id"`
+	Ctx     context.Context
+}
+
+// ForceLogoutDevice 强制下线指定设备
+func (a Account) ForceLogoutDevice(req ForceLogoutDeviceRequest) (err error) {
+	tokenRepo := NewTokenRepo(req.Ctx)
+	if _, err = tokenRepo.UpdateTokenActiveStatus(req.TokenId, 0); err != nil {
+		return
+	}
+	return nil
+}
+
+// ForceLogoutAllDevicesRequest 强制下线所有设备参数
+type ForceLogoutAllDevicesRequest struct {
+	UserId int64 `json:"userId" require:"1" memo:"用户id"`
+	Ctx    context.Context
+}
+
+// ForceLogoutAllDevices 强制下线用户的所有设备
+func (a Account) ForceLogoutAllDevices(req ForceLogoutAllDevicesRequest) (err error) {
+	tokenRepo := NewTokenRepo(req.Ctx)
+	if _, err = tokenRepo.DeleteAllTokensByUserId(req.UserId); err != nil {
+		return
+	}
 	return nil
 }
 
