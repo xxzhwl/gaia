@@ -27,6 +27,8 @@ const (
 )
 
 var BanLoggerKey = "BanLogger"
+var BanLoggerContent = "BanLoggerContent"
+var DisabledPushLoggerKey = "DisabledPushLogger"
 
 type Request struct {
 	c *app.RequestContext
@@ -86,8 +88,10 @@ func (r *Request) C() *app.RequestContext {
 	return r.c
 }
 
-func (r *Request) BanLogger() {
+func (r *Request) BanLogger(reason string, disabledPush bool) {
 	r.c.Set(BanLoggerKey, true)
+	r.c.Set(BanLoggerContent, reason)
+	r.c.Set(DisabledPushLoggerKey, disabledPush)
 }
 
 func (r *Request) resp(data any, err error) {

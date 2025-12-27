@@ -64,7 +64,13 @@ func (s *Server) defaultServerLogger() app.HandlerFunc {
 			//请求路径
 			path := ctx.URI().String()
 			//请求参数
-			body := string(ctx.Request.Body())
+			body := ""
+			if ctx.GetBool(BanLoggerKey) {
+				body = ctx.GetString(BanLoggerContent)
+			} else {
+				body = string(ctx.Request.Body())
+			}
+
 			//返回状态码
 			code := ctx.Response.StatusCode()
 			//耗时
@@ -72,6 +78,7 @@ func (s *Server) defaultServerLogger() app.HandlerFunc {
 			logger := logImpl.NewDefaultLogger()
 
 			content := ""
+
 			if gaia.GetSafeConfBool(s.schema + ".Logger.DetailMode") {
 				content = fmt.Sprintf(detailInfo, startTime.Format(gaia.DateTimeMillsFormat), path, method, body,
 					endTime.Format(gaia.DateTimeMillsFormat), code, dura)
@@ -85,10 +92,11 @@ func (s *Server) defaultServerLogger() app.HandlerFunc {
 					path,
 				)
 			}
+
 			if gaia.GetSafeConfBool(s.schema + ".Logger.PrintConsole") {
 				logger.ApiLog(gaia.LogInfoLevel, content)
 			}
-			if gaia.GetSafeConfBool(s.schema+".Logger.EnablePushLog") && !ctx.GetBool(BanLoggerKey) {
+			if gaia.GetSafeConfBool(s.schema+".Logger.EnablePushLog") && !ctx.GetBool(DisabledPushLoggerKey) {
 				reqHeader, respHeader := http.Header{}, http.Header{}
 				ctx.Request.Header.VisitAll(func(key, value []byte) {
 					reqHeader[string(key)] = []string{string(value)}
