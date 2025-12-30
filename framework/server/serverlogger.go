@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -76,6 +77,13 @@ func (s *Server) defaultServerLogger() app.HandlerFunc {
 			//耗时
 			dura := endTime.Sub(startTime)
 			logger := logImpl.NewDefaultLogger()
+
+			contentType := string(ctx.Request.Header.ContentType())
+			if strings.Contains(contentType, "multipart/form-data") {
+				body = "[文件上传] 内容已隐藏"
+				ctx.Set(BanLoggerKey, true)
+				ctx.Set(BanLoggerContent, "文件上传请求")
+			}
 
 			content := ""
 

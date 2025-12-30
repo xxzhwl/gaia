@@ -46,7 +46,7 @@ type ObjectInfo struct {
 func GenerateObjectName(prefix, extension string) string {
 	timestamp := time.Now().Format("20060102_150405")
 	if prefix != "" {
-		return fmt.Sprintf("%s/%s.%s", prefix, timestamp, extension)
+		return fmt.Sprintf("%s_%s.%s", prefix, timestamp, extension)
 	}
 	return fmt.Sprintf("%s.%s", timestamp, extension)
 }
@@ -57,7 +57,7 @@ func GenerateUniqueObjectName(prefix, extension string) string {
 	randomStr := fmt.Sprintf("%d", time.Now().UnixNano()%1000000)
 
 	if prefix != "" {
-		return fmt.Sprintf("%s/%s_%s.%s", prefix, timestamp, randomStr, extension)
+		return fmt.Sprintf("%s_%s_%s.%s", prefix, timestamp, randomStr, extension)
 	}
 	return fmt.Sprintf("%s_%s.%s", timestamp, randomStr, extension)
 }
