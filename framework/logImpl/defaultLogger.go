@@ -80,14 +80,33 @@ type DefaultLogger struct {
 	locker sync.RWMutex
 
 	ShowLoggerLevel gaia.LogLevel
+
+	logChan    chan string
+	flushTimer *time.Timer
+	stopChan   chan struct{}
 }
 
 func NewDefaultLogger() *DefaultLogger {
-	return &DefaultLogger{timeFormat: logTimeFormat, title: "Default", ShowLoggerLevel: gaia.LogInfoLevel}
+	logger := &DefaultLogger{
+		timeFormat:      logTimeFormat,
+		title:           "Default",
+		ShowLoggerLevel: gaia.LogInfoLevel,
+		logChan:         make(chan string, 1000),
+		stopChan:        make(chan struct{}),
+	}
+	logger.startLogFlusher()
+	return logger
 }
 
 func NewLogger(title string) gaia.IBaseLog {
-	return &DefaultLogger{title: title, timeFormat: logTimeFormat}
+	logger := &DefaultLogger{
+		title:      title,
+		timeFormat: logTimeFormat,
+		logChan:    make(chan string, 1000),
+		stopChan:   make(chan struct{}),
+	}
+	logger.startLogFlusher()
+	return logger
 }
 
 func (d *DefaultLogger) SetShowLoggerLevel(level gaia.LogLevel) {
@@ -142,19 +161,55 @@ func (d *DefaultLogger) log(logString string) {
 	}
 
 	if !gaia.GetSafeConfBool("Logger.DisableLocalFile") {
-		g.Go(func() {
-			d.logLocalLogFile(logString)
-		})
+		select {
+		case d.logChan <- logString:
+		default:
+			gaia.Error("logChan is full, dropping log")
+		}
 	}
 }
 
-func (d *DefaultLogger) logLocalLogFile(logString string) {
-	//输出到本地日志文件
+func (d *DefaultLogger) startLogFlusher() {
+	d.flushTimer = time.NewTimer(2 * time.Second)
+
+	go func() {
+		logBuffer := make([]string, 0, 100)
+
+		for {
+			select {
+			case logString := <-d.logChan:
+				logBuffer = append(logBuffer, logString)
+				if len(logBuffer) >= cap(d.logChan) {
+					d.flushLogs(logBuffer)
+					logBuffer = make([]string, 0, 100)
+				}
+			case <-d.flushTimer.C:
+				if len(logBuffer) > 0 {
+					d.flushLogs(logBuffer)
+					logBuffer = make([]string, 0, 100)
+				}
+				d.flushTimer.Reset(2 * time.Second)
+			case <-d.stopChan:
+				if len(logBuffer) > 0 {
+					d.flushLogs(logBuffer)
+				}
+				return
+			}
+		}
+	}()
+}
+
+func (d *DefaultLogger) flushLogs(logs []string) {
+	if len(logs) == 0 {
+		return
+	}
+
 	dir, err := os.Getwd()
 	if err != nil {
 		gaia.Error(err.Error())
 		return
 	}
+
 	path := dir + gaia.Sep + DefaultLoggerPath + time.Now().Format("2006-01-02")
 	fileName := time.Now().Format("15") + ".log"
 
@@ -162,9 +217,19 @@ func (d *DefaultLogger) logLocalLogFile(logString string) {
 		gaia.Error(err.Error())
 		return
 	}
-	if err = gaia.FileAppendContent(path+gaia.Sep+fileName, logString); err != nil {
+
+	content := strings.Join(logs, "")
+	if err = gaia.FileAppendContent(path+gaia.Sep+fileName, content); err != nil {
 		gaia.Error(err.Error())
 		return
+	}
+}
+
+func (d *DefaultLogger) Stop() {
+	fmt.Println("开始停止日志输出")
+	close(d.stopChan)
+	if d.flushTimer != nil {
+		d.flushTimer.Stop()
 	}
 }
 

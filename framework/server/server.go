@@ -15,6 +15,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/common/config"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"github.com/cloudwego/hertz/pkg/route"
+	"github.com/hertz-contrib/pprof"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
@@ -226,8 +227,9 @@ func (s *Server) registerPlugin() {
 		s.Use(s.corsPlugin())
 	} //注册跨域插件
 
-	if gaia.GetSafeConfBool("pprof.Enable") {
+	if gaia.GetSafeConfBool(s.schema + ".Pprof.Enable") {
 		gaia.Info("启用pprof")
+		pprof.Register(s.Hertz)
 	}
 
 	gaia.Info("启用链路追踪")
