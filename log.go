@@ -88,6 +88,9 @@ type IBaseLog interface {
 	ErrorF(format string, args ...any)
 
 	SetShowLoggerLevel(level LogLevel)
+
+	// Stop 停止日志服务，确保所有日志都被刷新
+	Stop()
 }
 
 var LocalLogger IBaseLog
@@ -261,4 +264,8 @@ func (t TempLog) Error(content string) {
 
 func (t TempLog) ErrorF(format string, args ...any) {
 	ErrorF(format, args...)
+}
+
+func (t TempLog) Stop() {
+	// TempLog 不需要停止操作
 }

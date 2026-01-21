@@ -226,10 +226,60 @@ func (d *DefaultLogger) flushLogs(logs []string) {
 }
 
 func (d *DefaultLogger) Stop() {
-	fmt.Println("开始停止日志输出")
-	close(d.stopChan)
+	// 先停止定时器
 	if d.flushTimer != nil {
 		d.flushTimer.Stop()
+	}
+
+	// 发送停止信号
+	close(d.stopChan)
+
+	// 等待日志刷新协程完成
+	// 这里需要等待一小段时间让协程处理完剩余的日志
+	time.Sleep(100 * time.Millisecond)
+
+	// 确保所有日志都被处理完毕
+	// 继续处理channel中剩余的日志
+	d.ensureAllLogsFlushed()
+}
+
+// ensureAllLogsFlushed 确保所有日志都被刷新到文件
+func (d *DefaultLogger) ensureAllLogsFlushed() {
+	// 创建一个临时的日志缓冲区
+	logBuffer := make([]string, 0, 100)
+
+	// 设置超时，避免无限等待
+	timeout := time.After(5 * time.Second)
+
+	for {
+		select {
+		case logString, ok := <-d.logChan:
+			if !ok {
+				// channel 已关闭
+				if len(logBuffer) > 0 {
+					d.flushLogs(logBuffer)
+				}
+				return
+			}
+
+			logBuffer = append(logBuffer, logString)
+			if len(logBuffer) >= cap(logBuffer) {
+				d.flushLogs(logBuffer)
+				logBuffer = make([]string, 0, 100)
+			}
+		case <-timeout:
+			// 超时后强制刷新剩余日志
+			if len(logBuffer) > 0 {
+				d.flushLogs(logBuffer)
+			}
+			return
+		default:
+			// 如果没有更多日志，检查并刷新缓冲区
+			if len(logBuffer) > 0 {
+				d.flushLogs(logBuffer)
+			}
+			return
+		}
 	}
 }
 

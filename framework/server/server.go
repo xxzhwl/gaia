@@ -102,8 +102,23 @@ func (s *Server) Run() {
 	// 步骤3: 打印路由信息
 	gaia.Info(routesInfo)
 
-	// 步骤4: 启动服务器
+	// 步骤4: 注册优雅关闭钩子
+	s.registerShutdownHook()
+
+	// 步骤5: 启动服务器
 	s.Spin()
+}
+
+// registerShutdownHook 注册优雅关闭钩子
+func (s *Server) registerShutdownHook() {
+	s.OnShutdown = append(s.OnShutdown, func(ctx context.Context) {
+		gaia.Info("正在停止日志服务...")
+		// 停止日志服务，确保所有日志都被刷新
+		if logger := gaia.GetLogger(); logger != nil {
+			logger.Stop()
+		}
+		gaia.Info("日志服务已停止")
+	})
 }
 
 // sortRoutes 按HTTP方法优先级和路径字母顺序排序路由

@@ -161,6 +161,12 @@ func (h *HttpServer) StartWithContext(ctx context.Context) error {
 
 // Shutdown gracefully shuts down the server with the given context
 func (h *HttpServer) Shutdown(ctx context.Context) error {
+	// 先停止日志服务，确保所有日志都被刷新
+	if logger := GetLogger(); logger != nil {
+		logger.Stop()
+	}
+
+	// 然后优雅关闭HTTP服务器
 	if err := h.server.Shutdown(ctx); err != nil {
 		ErrorF("Shutdown error: %s", err.Error())
 		return err
