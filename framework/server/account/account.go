@@ -546,6 +546,10 @@ func (a Account) RefreshToken(request RefreshTokenRequest) (resp RefreshTokenRes
 	refreshAuthUtil := server.NewJwtAuth(server.NewJwtConf("JwtConf"))
 	uid, err := refreshAuthUtil.GetCk(request.RefreshToken)
 	if err != nil {
+		if errwrap.GetCode(err) == errwrap.EcAuthErr {
+			// refresh token过期，返回特定错误码
+			err = errwrap.Error(20002, errors.New("refresh token expired"))
+		}
 		return
 	}
 	if len(uid) == 0 {
@@ -578,7 +582,7 @@ func (a Account) RefreshToken(request RefreshTokenRequest) (resp RefreshTokenRes
 
 	//3.检查 token 是否过期
 	if time.Now().After(tokenRecord.ExpiredTime) {
-		err = errors.New("refreshToken已过期")
+		err = errwrap.Error(20002, errors.New("refreshToken已过期"))
 		return
 	}
 
