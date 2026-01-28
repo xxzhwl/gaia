@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -77,6 +78,7 @@ func GetConfFromRemoteConfCenter(ctx context.Context, key string) (res any, exis
 	}
 }
 
+// GetConfFromLocalFile 从本地文件获取配置值
 func GetConfFromLocalFile(key string) (any, bool, error) {
 	if len(key) == 0 {
 		return nil, false, nil
@@ -142,6 +144,7 @@ func getConfFromLocalYmlFile(fileName, key string) (any, bool, error) {
 	return nil, false, nil
 }
 
+// GetConf 获取配置值，支持环境变量、本地文件、远程配置中心多级来源
 func GetConf(key string) (any, error) {
 	confCacheTime := defaultConfCacheTime
 
@@ -212,6 +215,7 @@ func GetConf(key string) (any, error) {
 	return res, nil
 }
 
+// GetConfInt64 获取int64类型的配置值
 func GetConfInt64(key string) (int64, error) {
 	conf, err := GetConf(key)
 	if err != nil {
@@ -220,11 +224,13 @@ func GetConfInt64(key string) (int64, error) {
 	return cvt.GetInt64(conf, fmt.Sprintf("conf:%s转int64失败", key), 0)
 }
 
+// GetSafeConfInt64 安全获取int64配置值，出错时返回零值
 func GetSafeConfInt64(key string) int64 {
 	v, _ := GetConfInt64(key)
 	return v
 }
 
+// GetSafeConfInt64WithDefault 安全获取int64配置值，支持自定义默认值
 func GetSafeConfInt64WithDefault(key string, defaultValue int64) int64 {
 	v, err := GetConfInt64(key)
 	if err != nil {
@@ -233,6 +239,7 @@ func GetSafeConfInt64WithDefault(key string, defaultValue int64) int64 {
 	return v
 }
 
+// GetConfString 获取string类型的配置值
 func GetConfString(key string) (string, error) {
 	conf, err := GetConf(key)
 	if err != nil {
@@ -241,11 +248,13 @@ func GetConfString(key string) (string, error) {
 	return cvt.GetString(conf, fmt.Sprintf("conf:%s转String失败", key), "")
 }
 
+// GetSafeConfString 安全获取string配置值，出错时返回空字符串
 func GetSafeConfString(key string) string {
 	v, _ := GetConfString(key)
 	return v
 }
 
+// GetSafeConfStringWithDefault 安全获取string配置值，支持自定义默认值
 func GetSafeConfStringWithDefault(key string, defaultValue string) string {
 	v, err := GetConfString(key)
 	if err != nil {
@@ -254,6 +263,7 @@ func GetSafeConfStringWithDefault(key string, defaultValue string) string {
 	return v
 }
 
+// GetConfStringSliceFromString 获取字符串切片配置值，将配置字符串按分隔符分割
 func GetConfStringSliceFromString(key string) ([]string, error) {
 	v, err := GetConfString(key)
 	if err != nil {
@@ -262,11 +272,13 @@ func GetConfStringSliceFromString(key string) ([]string, error) {
 	return SplitStr(v), nil
 }
 
+// GetSafeConfStringSliceFromString 安全获取字符串切片配置值，出错时返回空切片
 func GetSafeConfStringSliceFromString(key string) []string {
 	v, _ := GetConfString(key)
 	return SplitStr(v)
 }
 
+// GetSafeConfStringSliceFromStringWithDefault 安全获取字符串切片配置值，支持自定义默认值
 func GetSafeConfStringSliceFromStringWithDefault(key string, defaultValue []string) []string {
 	v, err := GetConfString(key)
 	if err != nil {
@@ -275,6 +287,7 @@ func GetSafeConfStringSliceFromStringWithDefault(key string, defaultValue []stri
 	return SplitStr(v)
 }
 
+// GetConfFloat64 获取float64类型的配置值
 func GetConfFloat64(key string) (float64, error) {
 	conf, err := GetConf(key)
 	if err != nil {
@@ -283,11 +296,13 @@ func GetConfFloat64(key string) (float64, error) {
 	return cvt.GetFloat64(conf, fmt.Sprintf("conf:%s转Float失败", key), 0)
 }
 
+// GetSafeConfFloat64 安全获取float64配置值，出错时返回零值
 func GetSafeConfFloat64(key string) float64 {
 	v, _ := GetConfFloat64(key)
 	return v
 }
 
+// GetSafeConfFloat64WithDefault 安全获取float64配置值，支持自定义默认值
 func GetSafeConfFloat64WithDefault(key string, defaultValue float64) float64 {
 	v, err := GetConfFloat64(key)
 	if err != nil {
@@ -296,6 +311,7 @@ func GetSafeConfFloat64WithDefault(key string, defaultValue float64) float64 {
 	return v
 }
 
+// GetConfBool 获取bool类型的配置值
 func GetConfBool(key string) (bool, error) {
 	conf, err := GetConf(key)
 	if err != nil {
@@ -304,11 +320,13 @@ func GetConfBool(key string) (bool, error) {
 	return cvt.GetBool(conf, fmt.Sprintf("conf:%s转bool失败", key), false)
 }
 
+// GetSafeConfBool 安全获取bool配置值，出错时返回false
 func GetSafeConfBool(key string) bool {
 	v, _ := GetConfBool(key)
 	return v
 }
 
+// GetSafeConfBoolWithDefault 安全获取bool配置值，支持自定义默认值
 func GetSafeConfBoolWithDefault(key string, defaultValue bool) bool {
 	v, err := GetConfBool(key)
 	if err != nil {
@@ -317,6 +335,7 @@ func GetSafeConfBoolWithDefault(key string, defaultValue bool) bool {
 	return v
 }
 
+// LoadConfToObjWithErr 加载配置到对象，返回错误信息
 func LoadConfToObjWithErr(key string, obj any) error {
 	conf, err := GetConf(key)
 	if err != nil {
@@ -329,10 +348,139 @@ func LoadConfToObjWithErr(key string, obj any) error {
 	return json.Unmarshal(marshal, &obj)
 }
 
+// LoadConfToObj 加载配置到对象，忽略错误
 func LoadConfToObj(key string, obj any) {
 	LoadConfToObjWithErr(key, obj)
 }
 
+// BindConfigWithErr 通过结构体标签绑定配置
+// 标签格式：config:"配置键名"
+// 示例：
+// type Config struct {
+//     Port string `config:"Server.Port"`
+// }
+func BindConfigWithErr(confArg any) error {
+	val := reflect.ValueOf(confArg)
+	if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
+		return errors.New("confArg must be a pointer to struct")
+	}
+	
+	return bindConfigRecursive(val.Elem())
+}
+
+// bindConfigRecursive 递归绑定配置到结构体字段
+func bindConfigRecursive(val reflect.Value) error {
+	typ := val.Type()
+	for i := 0; i < val.NumField(); i++ {
+		field := val.Field(i)
+		fieldType := typ.Field(i)
+		
+		// 如果是嵌套结构体（非匿名），递归处理
+		if field.Kind() == reflect.Struct && fieldType.Anonymous {
+			// 匿名结构体，嵌入字段
+			if err := bindConfigRecursive(field); err != nil {
+				return err
+			}
+			continue
+		} else if field.Kind() == reflect.Struct {
+			// 非匿名结构体字段，递归处理
+			if err := bindConfigRecursive(field); err != nil {
+				return err
+			}
+			continue
+		}
+		
+		// 获取config标签
+		tag := fieldType.Tag.Get("config")
+		if tag == "" {
+			continue // 没有配置标签，跳过
+		}
+		
+		// 获取配置值
+		confValue, err := GetConf(tag)
+		if err != nil {
+			// 配置不存在，可以跳过或返回错误
+			// 这里选择跳过，保持字段的零值
+			continue
+		}
+		
+		// 根据字段类型进行转换和赋值
+		if err := setFieldValue(field, confValue); err != nil {
+			return fmt.Errorf("failed to set field %s: %w", fieldType.Name, err)
+		}
+	}
+	return nil
+}
+
+// setFieldValue 设置结构体字段的值
+func setFieldValue(field reflect.Value, confValue any) error {
+	if !field.CanSet() {
+		return errors.New("field cannot be set")
+	}
+	
+	switch field.Kind() {
+	case reflect.String:
+		str, err := cvt.GetString(confValue, "", "")
+		if err != nil {
+			return err
+		}
+		field.SetString(str)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		i, err := cvt.GetInt64(confValue, "", 0)
+		if err != nil {
+			return err
+		}
+		field.SetInt(i)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		i, err := cvt.GetInt64(confValue, "", 0)
+		if err != nil {
+			return err
+		}
+		field.SetUint(uint64(i))
+	case reflect.Float32, reflect.Float64:
+		f, err := cvt.GetFloat64(confValue, "", 0)
+		if err != nil {
+			return err
+		}
+		field.SetFloat(f)
+	case reflect.Bool:
+		b, err := cvt.GetBool(confValue, "", false)
+		if err != nil {
+			return err
+		}
+		field.SetBool(b)
+	case reflect.Slice:
+		// 处理切片类型
+		sliceType := field.Type()
+		
+		// 使用现有的GetConfSlice功能
+		// 这里简化处理：先尝试直接获取配置值
+		// 更复杂的实现可以根据元素类型处理
+		// 暂时使用JSON序列化/反序列化
+		jsonBytes, err := json.Marshal(confValue)
+		if err != nil {
+			return err
+		}
+		
+		slicePtr := reflect.New(sliceType)
+		if err := json.Unmarshal(jsonBytes, slicePtr.Interface()); err != nil {
+			return err
+		}
+		field.Set(slicePtr.Elem())
+	default:
+		// 其他类型暂不支持
+		return fmt.Errorf("unsupported field type: %s", field.Kind())
+	}
+	
+	return nil
+}
+
+// BindConfig 通过结构体标签绑定配置，忽略错误
+func BindConfig(confArg any) {
+	BindConfigWithErr(confArg)
+}
+
+// GetConfSlice 获取切片类型的配置值
 func GetConfSlice[T any](key string) ([]T, error) {
 	conf, err := GetConf(key)
 	if err != nil {
@@ -349,6 +497,7 @@ func GetConfSlice[T any](key string) ([]T, error) {
 	return result, nil
 }
 
+// GetSafeConfSlice 安全获取切片类型配置值，出错时返回空切片
 func GetSafeConfSlice[T any](key string) []T {
 	result := make([]T, 0)
 	conf, err := GetConf(key)
