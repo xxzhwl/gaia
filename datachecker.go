@@ -16,6 +16,7 @@ import (
 type DataChecker struct {
 }
 
+// NewDataChecker 创建DataChecker实例
 func NewDataChecker() *DataChecker {
 	return &DataChecker{}
 }
@@ -101,6 +102,7 @@ func (d *DataChecker) TimeHourSplit(v any, label, split string) error {
 	return fmt.Errorf("%s要求时间类型(HH%sMM%sSS)的数据", label, split, split)
 }
 
+// Mail 验证邮箱地址格式
 func (d *DataChecker) Mail(v any, label string) error {
 	if val, ok := v.(string); ok {
 		pattern := `^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$`

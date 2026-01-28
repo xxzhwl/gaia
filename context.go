@@ -31,7 +31,7 @@ func init() {
 	traceDataStack = make(map[string]*TraceData)
 }
 
-// SetTraceDataIdSuffix 设定上下文跟踪ID生成后缀，此函数在一个进程中一般只会调用一次进行初始初化
+// SetTraceDataIdSuffix 设定上下文跟踪ID生成后缀，此函数在一个进程中一般只会调用一次进行初始化
 func SetTraceDataIdSuffix(suffix string) {
 	traceDataIdSuffix = suffix
 }
@@ -91,7 +91,7 @@ func BuildContextTrace() {
 	}
 }
 
-// BuildHttpContextTraceWithRw 利用Response和Request构建TraceData，该函数在接收一个http请求时应该首先被执行，
+// BuildHttpContextTraceWithRw 利用Response和Request构建TraceData，该函数在接收一个http请求时应该首先被执行
 func BuildHttpContextTraceWithRw(w http.ResponseWriter, r *http.Request) {
 	goid := GetGoRoutineId()
 	if !_allowBuildContext(goid) {
@@ -131,7 +131,7 @@ func BuildHttpContextTraceWithRw(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// BuildHttpContextTrace 利用Response和Request构建TraceData，该函数在接收一个http请求时应该首先被执行，
+// BuildHttpContextTrace 利用Response和Request构建TraceData，该函数在接收一个http请求时应该首先被执行
 func BuildHttpContextTrace(traceId, clientIp, followFrom string) {
 	goid := GetGoRoutineId()
 	if !_allowBuildContext(goid) {

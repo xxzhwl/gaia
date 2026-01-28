@@ -249,13 +249,16 @@ func CalExpireDate(startDate string, expireDays int) (string, error) {
 	return expireDate, nil
 }
 
+// LocalTime 自定义时间类型，用于JSON序列化和数据库操作
 type LocalTime time.Time
 
+// MarshalJSON 实现JSON序列化接口，将LocalTime转换为"2006-01-02 15:04:05"格式字符串
 func (t *LocalTime) MarshalJSON() ([]byte, error) {
 	tTime := time.Time(*t)
 	return []byte(fmt.Sprintf("\"%v\"", tTime.Format("2006-01-02 15:04:05"))), nil
 }
 
+// Value 实现driver.Valuer接口，用于数据库存储
 func (t LocalTime) Value() (driver.Value, error) {
 	var zeroTime time.Time
 	tlt := time.Time(t)
@@ -266,6 +269,7 @@ func (t LocalTime) Value() (driver.Value, error) {
 	return tlt, nil
 }
 
+// Scan 实现sql.Scanner接口，用于从数据库读取时间数据
 func (t *LocalTime) Scan(v interface{}) error {
 	if value, ok := v.(time.Time); ok {
 		*t = LocalTime(value)

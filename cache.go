@@ -41,7 +41,7 @@ func NewCache() *Cache {
 	return &Cache{}
 }
 
-// 添加配置函数，允许用户自定义最大缓存大小
+// SetMaxCacheSize 添加配置函数，允许用户自定义最大缓存大小
 func SetMaxCacheSize(size int) {
 	mutexSysGlobalCacheStack.Lock()
 	defer mutexSysGlobalCacheStack.Unlock()
@@ -146,7 +146,7 @@ func (o *Cache) SetString(key, value string, expiration time.Duration) {
 	o.Set(key, value, expiration)
 }
 
-// GetConfString 获取一个字符串值
+// GetString 获取一个字符串值
 func (o *Cache) GetString(key string) string {
 	v := o.Get(key)
 	if v == nil {
@@ -191,7 +191,7 @@ func (o *Cache) GetMap(key string) map[string]string {
 	return nil
 }
 
-// SetMapInterface 设置一个map[string]interface{}内型到cache中
+// SetMapInterface 设置一个map[string]interface{}类型到cache中
 func (o *Cache) SetMapInterface(key string, value map[string]interface{}, expiration time.Duration) {
 	o.Set(key, value, expiration)
 }
@@ -209,7 +209,7 @@ func (o *Cache) GetMapInterface(key string) map[string]interface{} {
 	return nil
 }
 
-// SetMapInterfaceList 设置一个[]map[string]interface{}内型到cache中
+// SetMapInterfaceList 设置一个[]map[string]interface{}类型到cache中
 func (o *Cache) SetMapInterfaceList(key string, value []map[string]interface{}, expiration time.Duration) {
 	o.Set(key, value, expiration)
 }

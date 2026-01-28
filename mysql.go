@@ -60,35 +60,40 @@ var dbLocker sync.RWMutex
 
 var dbLogger logger.Interface
 
+// SetDbLogger 设置数据库日志器
 func SetDbLogger(logger logger.Interface) {
-	dbLogger = logger
+    dbLogger = logger
 }
 
+// Mysql 封装GORM数据库连接
 type Mysql struct {
-	db *gorm.DB
+    db *gorm.DB
 }
 
+// NewFrameworkMysql 创建框架默认MySQL连接
 func NewFrameworkMysql() (*Mysql, error) {
-	db, err := NewMySQLWithDsn(GetSafeConfString("Framework.Mysql"))
-	if err != nil {
-		return nil, err
-	}
-	return db, nil
+    db, err := NewMySQLWithDsn(GetSafeConfString("Framework.Mysql"))
+    if err != nil {
+        return nil, err
+    }
+    return db, nil
 }
 
+// NewMysqlWithSchema 根据配置schema创建MySQL连接
 func NewMysqlWithSchema(schema string) (*Mysql, error) {
-	return NewMySQLWithDsn(GetSafeConfString(schema))
+    return NewMySQLWithDsn(GetSafeConfString(schema))
 }
 
+// NewMySQLWithDsn 根据DSN字符串创建MySQL连接
 func NewMySQLWithDsn(dsn string) (*Mysql, error) {
-	g := getDb(dsn)
-	if g != nil {
-		return g, nil
-	}
-	if err := genConn(dsn); err != nil {
-		return nil, err
-	}
-	return getDb(dsn), nil
+    g := getDb(dsn)
+    if g != nil {
+        return g, nil
+    }
+    if err := genConn(dsn); err != nil {
+        return nil, err
+    }
+    return getDb(dsn), nil
 }
 
 func genConn(dsn string) error {
@@ -152,60 +157,63 @@ func setDb(dsn string, db *Mysql) {
 	dbConnPool[dsn] = db
 }
 
+// MysqlFetch 将SQL查询结果行转换为map切片
 func MysqlFetch(rows *sql.Rows) ([]map[string]string, error) {
-	result := make([]map[string]string, 0)
-	columns, err := rows.Columns()
-	if err != nil {
-		//an error occurred
-		return nil, err
-	}
+    result := make([]map[string]string, 0)
+    columns, err := rows.Columns()
+    if err != nil {
+        //an error occurred
+        return nil, err
+    }
 
-	rawBytes := make([]sql.RawBytes, len(columns))
+    rawBytes := make([]sql.RawBytes, len(columns))
 
-	//rows.Scan wants '[]any' as an argument, so we must copy
-	//the references into such a slice
-	scanArgs := make([]any, len(columns))
+    //rows.Scan wants '[]any' as an argument, so we must copy
+    //the references into such a slice
+    scanArgs := make([]any, len(columns))
 
-	for i := range rawBytes {
-		scanArgs[i] = &rawBytes[i]
-	}
+    for i := range rawBytes {
+        scanArgs[i] = &rawBytes[i]
+    }
 
-	for rows.Next() {
-		err = rows.Scan(scanArgs...)
-		if err != nil {
-			return nil, err
-		}
-		var val string
-		item := make(map[string]string)
-		for i, col := range rawBytes {
-			if col == nil {
-				val = ""
-			} else {
-				val = string(col)
-			}
-			item[columns[i]] = val
-		}
-		result = append(result, item)
-	}
-	return result, nil
+    for rows.Next() {
+        err = rows.Scan(scanArgs...)
+        if err != nil {
+            return nil, err
+        }
+        var val string
+        item := make(map[string]string)
+        for i, col := range rawBytes {
+            if col == nil {
+                val = ""
+            } else {
+                val = string(col)
+            }
+            item[columns[i]] = val
+        }
+        result = append(result, item)
+    }
+    return result, nil
 }
 
+// GetGormDb 获取底层GORM DB实例
 func (m *Mysql) GetGormDb() *gorm.DB {
-	return m.db
+    return m.db
 }
 
+// ExecCommand 执行原始SQL命令并返回结果
 func (m *Mysql) ExecCommand(command string, args ...any) ([]map[string]string, error) {
-	// 使用GORM的参数化查询避免SQL注入
-	tx := m.db.Raw(command, args...)
-	rows, err := tx.Rows()
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute SQL: %w", err)
-	}
-	if rows == nil {
-		return nil, errors.New("rows nil")
-	}
+    // 使用GORM的参数化查询避免SQL注入
+    tx := m.db.Raw(command, args...)
+    rows, err := tx.Rows()
+    if err != nil {
+        return nil, fmt.Errorf("failed to execute SQL: %w", err)
+    }
+    if rows == nil {
+        return nil, errors.New("rows nil")
+    }
 
-	defer rows.Close()
+    defer rows.Close()
 
-	return MysqlFetch(rows)
+    return MysqlFetch(rows)
 }
