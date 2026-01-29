@@ -44,6 +44,9 @@ func NewAppWithPort(port string) *Server {
 }
 
 func newApp(schema, port string) *Server {
+	if schema == "" {
+		schema = "Server"
+	}
 	if _, err := tracer.SetupTracer(context.Background(), schema); err != nil {
 		gaia.Error("Failed to setup tracer: " + err.Error())
 	}
