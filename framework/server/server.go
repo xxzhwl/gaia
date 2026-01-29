@@ -34,13 +34,22 @@ func NewApp(schema string) *Server {
 		schema = "Server"
 	}
 
+	port := gaia.GetSafeConfString(schema + ".Port")
+	return newApp(schema, port)
+}
+
+// NewAppWithPort 创建一个新的Server实例，并指定端口号
+func NewAppWithPort(port string) *Server {
+	return newApp("", port)
+}
+
+func newApp(schema, port string) *Server {
 	if _, err := tracer.SetupTracer(context.Background(), schema); err != nil {
 		gaia.Error("Failed to setup tracer: " + err.Error())
 	}
 
 	var configs []config.Option
 	host := gaia.GetSafeConfString(schema + ".Host")
-	port := gaia.GetSafeConfString(schema + ".Port")
 	configs = append(configs, server.WithHostPorts(host+":"+port))
 
 	gracefulExitTime := gaia.GetSafeConfInt64(schema + ".GracefulExitTime")
