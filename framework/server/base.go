@@ -129,10 +129,10 @@ type ListResponse[E any] struct {
 	Total   int64 `json:"total"`
 }
 
-type HandlerFunc func(req Request) (any, error)
+type HandlerFunc[Resp any] func(req Request) (Resp, error)
 
 // MakeHandler 供API
-func MakeHandler(handler HandlerFunc) app.HandlerFunc {
+func MakeHandler[Resp any](handler HandlerFunc[Resp]) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		pc := context.Background()
 		if v, ok := c.Get("ParentContext"); ok {
