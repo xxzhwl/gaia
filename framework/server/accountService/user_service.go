@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -44,6 +45,11 @@ func (s *UserService) Register(req RegisterRequest) (*User, error) {
 	checker := gaia.NewDataChecker()
 	if err := checker.CheckStructDataValid(req); err != nil {
 		return nil, fmt.Errorf("参数验证失败: %w", err)
+	}
+
+	// 验证密码强度
+	if err := validatePasswordStrength(req.Password); err != nil {
+		return nil, err
 	}
 
 	// 检查用户名是否已存在
@@ -104,16 +110,30 @@ func (s *UserService) Register(req RegisterRequest) (*User, error) {
 		user.Nickname = &req.Nickname
 	}
 
-	// 保存用户
-	if err := s.db.WithContext(ctx).Create(&user).Error; err != nil {
-		return nil, fmt.Errorf("创建用户失败: %w", err)
-	}
+	// 在事务中创建用户并分配默认角色
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&user).Error; err != nil {
+			return fmt.Errorf("创建用户失败: %w", err)
+		}
 
-	// 为用户分配默认角色
-	if err := s.assignDefaultRole(&user); err != nil {
-		// 如果分配角色失败，删除刚创建的用户
-		s.db.WithContext(ctx).Delete(&user)
-		return nil, fmt.Errorf("分配默认角色失败: %w", err)
+		// 为用户分配默认角色
+		var role Role
+		if err := tx.WithContext(ctx).Where("code = ? AND status = ?", "user", RoleStatusEnabled).First(&role).Error; err != nil {
+			return fmt.Errorf("未找到默认角色: %w", err)
+		}
+
+		userRole := UserRole{
+			UserID: user.ID,
+			RoleID: role.ID,
+		}
+		if err := tx.Create(&userRole).Error; err != nil {
+			return fmt.Errorf("分配默认角色失败: %w", err)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
 	return &user, nil
@@ -123,10 +143,12 @@ func (s *UserService) Register(req RegisterRequest) (*User, error) {
 func (s *UserService) Login(req LoginRequest, ip string, userAgent string) (*User, *TokenResponse, error) {
 	ctx := gaia.NewContextTrace().GetParentCtx()
 
-	// 验证请求参数
-	checker := gaia.NewDataChecker()
-	if err := checker.CheckStructDataValid(req); err != nil {
-		return nil, nil, fmt.Errorf("参数验证失败: %w", err)
+	// OAuth 登录跳过参数校验
+	if req.LoginType != LoginTypeOAuth {
+		checker := gaia.NewDataChecker()
+		if err := checker.CheckStructDataValid(req); err != nil {
+			return nil, nil, fmt.Errorf("参数验证失败: %w", err)
+		}
 	}
 
 	// 查找用户
@@ -142,19 +164,58 @@ func (s *UserService) Login(req LoginRequest, ip string, userAgent string) (*Use
 	if user.Status == UserStatusDisabled {
 		return nil, nil, errors.New("用户已被禁用")
 	}
+
+	// 检查锁定状态，锁定过期自动解锁
+	if user.Status == UserStatusLocked && user.LockedUntil != nil && user.LockedUntil.Before(time.Now()) {
+		s.db.WithContext(ctx).Model(&user).Updates(map[string]interface{}{
+			"status":                UserStatusNormal,
+			"failed_login_attempts": 0,
+			"locked_until":          nil,
+		})
+		user.Status = UserStatusNormal
+		user.FailedLoginAttempts = 0
+	}
+
 	if user.Status == UserStatusLocked {
 		return nil, nil, errors.New("用户已被锁定")
 	}
 
-	// 验证密码
-	if !verifyPassword(req.Password, user.Salt, user.PasswordHash) {
-		// 记录登录失败日志
-		_ = s.recordLoginLog(user, req.LoginType, ip, userAgent, 0, "密码错误")
-		return nil, nil, errors.New("用户名或密码错误")
+	// 非 OAuth 登录需要验证密码
+	if req.LoginType != LoginTypeOAuth {
+		if !verifyPassword(req.Password, user.Salt, user.PasswordHash) {
+			// 增加失败计数
+			user.FailedLoginAttempts++
+			updates := map[string]interface{}{
+				"failed_login_attempts": user.FailedLoginAttempts,
+			}
+
+			// 连续失败 N 次后锁定
+			maxAttempts := gaia.GetSafeConfInt64WithDefault("Account.MaxLoginAttempts", 5)
+			lockMinutes := gaia.GetSafeConfInt64WithDefault("Account.LockDuration", 30)
+			if int(user.FailedLoginAttempts) >= int(maxAttempts) {
+				lockUntil := time.Now().Add(time.Duration(lockMinutes) * time.Minute)
+				updates["locked_until"] = lockUntil
+				updates["status"] = UserStatusLocked
+				user.Status = UserStatusLocked
+			}
+
+			s.db.WithContext(ctx).Model(&user).Updates(updates)
+			_ = s.recordLoginLog(user, req.LoginType, ip, userAgent, 0, "密码错误")
+			return nil, nil, errors.New("用户名或密码错误")
+		}
+	}
+
+	// 登录成功，重置失败计数
+	if user.FailedLoginAttempts > 0 {
+		s.db.WithContext(ctx).Model(&user).Updates(map[string]interface{}{
+			"failed_login_attempts": 0,
+			"locked_until":          nil,
+		})
+		user.FailedLoginAttempts = 0
 	}
 
 	// 兼容历史 SHA256 哈希，并在登录成功后自动升级到 bcrypt。
-	if isLegacyPasswordHash(user.PasswordHash) {
+	if req.LoginType != LoginTypeOAuth && isLegacyPasswordHash(user.PasswordHash) {
 		newSalt, saltErr := generateSalt()
 		newHash, hashErr := hashPassword(req.Password, newSalt)
 		if saltErr == nil && hashErr == nil {
@@ -171,6 +232,11 @@ func (s *UserService) Login(req LoginRequest, ip string, userAgent string) (*Use
 	roles, err := s.getUserRoles(user.ID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("获取用户角色失败: %w", err)
+	}
+
+	// 清理同设备的旧 Token
+	if req.DeviceID != "" {
+		s.db.WithContext(ctx).Where("user_id = ? AND device_id = ?", user.ID, req.DeviceID).Delete(&UserToken{})
 	}
 
 	// 生成Token
@@ -290,21 +356,246 @@ func (s *UserService) GetUserByUsername(username string) (*User, error) {
 }
 
 // GetUserList 获取用户列表
-func (s *UserService) GetUserList(page, pageSize int) ([]User, int64, error) {
+func (s *UserService) GetUserList(req UserListRequest) ([]User, int64, error) {
 	ctx := gaia.NewContextTrace().GetParentCtx()
 
+	if req.Page < 1 {
+		req.Page = 1
+	}
+	if req.PageSize < 1 || req.PageSize > 100 {
+		req.PageSize = 20
+	}
+
+	query := s.db.WithContext(ctx).Model(&User{})
+
+	// 模糊搜索用户名（转义通配符）
+	if req.Username != "" {
+		username := strings.ReplaceAll(req.Username, "%", "\\%")
+		username = strings.ReplaceAll(username, "_", "\\_")
+		query = query.Where("username LIKE ?", "%"+username+"%")
+	}
+
+	// 精确搜索邮箱
+	if req.Email != "" {
+		query = query.Where("email = ?", req.Email)
+	}
+
+	// 精确搜索手机号
+	if req.Phone != "" {
+		query = query.Where("phone = ?", req.Phone)
+	}
+
+	// 状态筛选
+	if req.Status != nil {
+		query = query.Where("status = ?", *req.Status)
+	}
+
+	// 角色筛选（JOIN 查询）
+	if req.RoleCode != "" {
+		query = query.Joins("JOIN user_roles ON user_roles.user_id = users.id").
+			Joins("JOIN roles ON roles.id = user_roles.role_id").
+			Where("roles.code = ?", req.RoleCode)
+	}
+
+	// 时间范围
+	if req.StartAt != "" {
+		if t, err := time.Parse("2006-01-02", req.StartAt); err == nil {
+			query = query.Where("created_at >= ?", t)
+		}
+	}
+	if req.EndAt != "" {
+		if t, err := time.Parse("2006-01-02", req.EndAt); err == nil {
+			query = query.Where("created_at < ?", t.Add(24*time.Hour))
+		}
+	}
+
 	var total int64
-	if err := s.db.WithContext(ctx).Model(&User{}).Count(&total).Error; err != nil {
+	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("查询用户总数失败: %w", err)
 	}
 
 	var users []User
-	offset := (page - 1) * pageSize
-	if err := s.db.WithContext(ctx).Offset(offset).Limit(pageSize).Find(&users).Error; err != nil {
+	offset := (req.Page - 1) * req.PageSize
+	if err := query.Offset(offset).Limit(req.PageSize).Find(&users).Error; err != nil {
 		return nil, 0, fmt.Errorf("查询用户列表失败: %w", err)
 	}
 
 	return users, total, nil
+}
+
+// ResetPasswordByCode 通过验证码重置密码
+func (s *UserService) ResetPasswordByCode(req ResetPasswordRequest) error {
+	ctx := gaia.NewContextTrace().GetParentCtx()
+
+	// 验证密码强度
+	if err := validatePasswordStrength(req.NewPassword); err != nil {
+		return err
+	}
+
+	// 通过邮箱或手机号查找用户
+	var user User
+	query := s.db.WithContext(ctx)
+	if strings.Contains(req.Target, "@") {
+		query = query.Where("email = ?", req.Target)
+	} else {
+		query = query.Where("phone = ?", req.Target)
+	}
+	if err := query.First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("用户不存在")
+		}
+		return fmt.Errorf("查询用户失败: %w", err)
+	}
+
+	// 验证验证码
+	verificationService := NewVerificationService(s.db)
+	_, err := verificationService.VerifyCode(req.Target, req.Code, VerificationTypeResetPass)
+	if err != nil {
+		return err
+	}
+
+	// 生成新密码哈希
+	salt, err := generateSalt()
+	if err != nil {
+		return fmt.Errorf("生成密码盐值失败: %w", err)
+	}
+	passwordHash, err := hashPassword(req.NewPassword, salt)
+	if err != nil {
+		return fmt.Errorf("密码哈希失败: %w", err)
+	}
+
+	// 重置密码并解锁
+	updates := map[string]interface{}{
+		"password_hash":        passwordHash,
+		"salt":                 salt,
+		"failed_login_attempts": 0,
+		"locked_until":          nil,
+		"status":               UserStatusNormal,
+	}
+	if err := s.db.WithContext(ctx).Model(&user).Updates(updates).Error; err != nil {
+		return fmt.Errorf("重置密码失败: %w", err)
+	}
+
+	return nil
+}
+
+// BatchUpdateStatus 批量修改用户状态
+func (s *UserService) BatchUpdateStatus(req BatchUserStatusRequest) (int64, error) {
+	ctx := gaia.NewContextTrace().GetParentCtx()
+
+	if len(req.UserIDs) == 0 {
+		return 0, errors.New("用户ID列表不能为空")
+	}
+
+	result := s.db.WithContext(ctx).Model(&User{}).
+		Where("id IN ?", req.UserIDs).
+		Update("status", req.Status)
+
+	if result.Error != nil {
+		return 0, fmt.Errorf("批量修改用户状态失败: %w", result.Error)
+	}
+
+	return result.RowsAffected, nil
+}
+
+// BatchAssignRole 批量分配角色
+func (s *UserService) BatchAssignRole(req BatchAssignRoleRequest) (int64, error) {
+	ctx := gaia.NewContextTrace().GetParentCtx()
+
+	if len(req.UserIDs) == 0 {
+		return 0, errors.New("用户ID列表不能为空")
+	}
+
+	// 验证角色是否存在
+	var role Role
+	if err := s.db.WithContext(ctx).Where("id = ?", req.RoleID).First(&role).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, errors.New("角色不存在")
+		}
+		return 0, fmt.Errorf("查询角色失败: %w", err)
+	}
+
+	var assigned int64
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, userID := range req.UserIDs {
+			// 检查用户是否存在
+			var user User
+			if err := tx.WithContext(ctx).Where("id = ?", userID).First(&user).Error; err != nil {
+				continue
+			}
+
+			// 检查是否已有该角色关联
+			var existing UserRole
+			if err := tx.WithContext(ctx).
+				Where("user_id = ? AND role_id = ?", userID, req.RoleID).
+				First(&existing).Error; err == nil {
+				continue // 已有，跳过
+			}
+
+			// 创建关联
+			userRole := UserRole{
+				UserID: userID,
+				RoleID: req.RoleID,
+			}
+			if err := tx.Create(&userRole).Error; err == nil {
+				assigned++
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return assigned, err
+	}
+
+	return assigned, nil
+}
+
+// GetUserDevices 获取用户的登录设备列表
+func (s *UserService) GetUserDevices(userID int64) ([]DeviceInfo, error) {
+	ctx := gaia.NewContextTrace().GetParentCtx()
+
+	var tokens []UserToken
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Find(&tokens).Error; err != nil {
+		return nil, fmt.Errorf("查询用户设备失败: %w", err)
+	}
+
+	var devices []DeviceInfo
+	for _, token := range tokens {
+		device := DeviceInfo{
+			DeviceID:  "",
+			TokenType: token.TokenType,
+			LoginAt:   token.CreatedAt,
+		}
+		if token.DeviceID != nil {
+			device.DeviceID = *token.DeviceID
+		}
+		devices = append(devices, device)
+	}
+
+	return devices, nil
+}
+
+// KickDevice 踢出指定设备
+func (s *UserService) KickDevice(userID int64, deviceID string) error {
+	ctx := gaia.NewContextTrace().GetParentCtx()
+
+	result := s.db.WithContext(ctx).
+		Where("user_id = ? AND device_id = ?", userID, deviceID).
+		Delete(&UserToken{})
+
+	if result.Error != nil {
+		return fmt.Errorf("踢出设备失败: %w", result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		return errors.New("设备不存在或已离线")
+	}
+
+	return nil
 }
 
 // UpdateUserProfile 更新用户资料
@@ -351,6 +642,11 @@ func (s *UserService) UpdateUserProfile(userID int64, updates map[string]interfa
 // ChangePassword 修改密码
 func (s *UserService) ChangePassword(userID int64, oldPassword, newPassword string) error {
 	ctx := gaia.NewContextTrace().GetParentCtx()
+
+	// 验证新密码强度
+	if err := validatePasswordStrength(newPassword); err != nil {
+		return err
+	}
 
 	var user User
 	if err := s.db.WithContext(ctx).Where("id = ?", userID).First(&user).Error; err != nil {
@@ -535,4 +831,21 @@ func generateUUID() (string, error) {
 		return "", fmt.Errorf("生成UUID失败: %w", err)
 	}
 	return id.String(), nil
+}
+
+// validatePasswordStrength 验证密码强度
+func validatePasswordStrength(password string) error {
+	if len(password) < 8 {
+		return errors.New("密码长度不能少于8位")
+	}
+	if len(password) > 128 {
+		return errors.New("密码长度不能超过128位")
+	}
+	hasUpper := regexp.MustCompile(`[A-Z]`).MatchString(password)
+	hasLower := regexp.MustCompile(`[a-z]`).MatchString(password)
+	hasDigit := regexp.MustCompile(`[0-9]`).MatchString(password)
+	if !hasUpper || !hasLower || !hasDigit {
+		return errors.New("密码必须包含大写字母、小写字母和数字")
+	}
+	return nil
 }

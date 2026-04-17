@@ -51,10 +51,10 @@ func Init() {
 	//框架DB层日志注入
 	// 根据配置设置日志级别
 	logLevel := logger.Silent
-	logLevelStr := strings.ToUpper(gaia.GetSafeConfString("Gorm.LogLevel"))
+	logLevelStr := gaia.GetSafeConfString("Gorm.LogLevel")
 	gaia.InfoF("Gorm日志级别:%s", logLevelStr)
 
-	switch logLevelStr {
+	switch strings.ToUpper(logLevelStr) {
 	case "INFO":
 		logLevel = logger.Info
 	case "WARN":
@@ -71,4 +71,10 @@ func Init() {
 		Colorful:                  true,
 	})
 	gaia.SetDbLogger(newDbLogger)
+
+	// ===== 组件依赖检测（Init 最后执行）=====
+	// 统一检测所有组件配置状态，可选组件缺失仅 warn 一次，必选组件缺失则 panic
+	if hasRequiredMissing := checkComponents(); hasRequiredMissing {
+		panic("存在必选组件未配置，无法启动。请检查上方的组件检测报告。")
+	}
 }

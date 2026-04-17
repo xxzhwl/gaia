@@ -7,23 +7,25 @@ import (
 // User 用户模型
 // 对应数据库表: users
 type User struct {
-	ID            int64      `json:"id" gorm:"primaryKey;autoIncrement;comment:用户ID[ID]"`
-	UUID          string     `json:"uuid" gorm:"uniqueIndex;size:36;not null;comment:用户唯一标识[UUID]"`
-	Username      string     `json:"username" gorm:"uniqueIndex;size:50;not null;comment:用户名[用户名]"`
-	Email         *string    `json:"email" gorm:"uniqueIndex;size:100;comment:邮箱[邮箱]"`
-	Phone         *string    `json:"phone" gorm:"uniqueIndex;size:20;comment:手机号[手机号]"`
-	PasswordHash  string     `json:"-" gorm:"size:255;not null;comment:密码哈希[密码哈希]"`
-	Salt          string     `json:"-" gorm:"size:64;comment:密码盐值[密码盐值]"`
-	Nickname      *string    `json:"nickname" gorm:"size:50;comment:昵称[昵称]"`
-	Status        int8       `json:"status" gorm:"type:tinyint;default:1;comment:用户状态[0:禁用;1:正常;2:锁定]"`
-	EmailVerified int8       `json:"email_verified" gorm:"type:tinyint;default:0;comment:邮箱是否验证[0:未验证;1:已验证]"`
-	PhoneVerified int8       `json:"phone_verified" gorm:"type:tinyint;default:0;comment:手机是否验证[0:未验证;1:已验证]"`
-	LastLoginAt   *time.Time `json:"last_login_at" gorm:"comment:最后登录时间[最后登录时间]"`
-	LastLoginIP   *string    `json:"last_login_ip" gorm:"size:45;comment:最后登录IP[最后登录IP]"`
-	LoginCount    int64      `json:"login_count" gorm:"default:0;comment:登录次数[登录次数]"`
-	CreatedAt     time.Time  `json:"created_at" gorm:"autoCreateTime;comment:创建时间[创建时间]"`
-	UpdatedAt     time.Time  `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间[更新时间]"`
-	DeletedAt     *time.Time `json:"deleted_at" gorm:"index;comment:删除时间[删除时间]"`
+	ID                 int64      `json:"id" gorm:"primaryKey;autoIncrement;comment:用户ID[ID]"`
+	UUID               string     `json:"uuid" gorm:"uniqueIndex;size:36;not null;comment:用户唯一标识[UUID]"`
+	Username           string     `json:"username" gorm:"uniqueIndex;size:50;not null;comment:用户名[用户名]"`
+	Email              *string    `json:"email" gorm:"uniqueIndex;size:100;comment:邮箱[邮箱]"`
+	Phone              *string    `json:"phone" gorm:"uniqueIndex;size:20;comment:手机号[手机号]"`
+	PasswordHash       string     `json:"-" gorm:"size:255;not null;comment:密码哈希[密码哈希]"`
+	Salt               string     `json:"-" gorm:"size:64;comment:密码盐值[密码盐值]"`
+	Nickname           *string    `json:"nickname" gorm:"size:50;comment:昵称[昵称]"`
+	Status             int8       `json:"status" gorm:"type:tinyint;default:1;comment:用户状态[0:禁用;1:正常;2:锁定]"`
+	EmailVerified      int8       `json:"email_verified" gorm:"type:tinyint;default:0;comment:邮箱是否验证[0:未验证;1:已验证]"`
+	PhoneVerified      int8       `json:"phone_verified" gorm:"type:tinyint;default:0;comment:手机是否验证[0:未验证;1:已验证]"`
+	LastLoginAt        *time.Time `json:"last_login_at" gorm:"comment:最后登录时间[最后登录时间]"`
+	LastLoginIP        *string    `json:"last_login_ip" gorm:"size:45;comment:最后登录IP[最后登录IP]"`
+	LoginCount         int64      `json:"login_count" gorm:"default:0;comment:登录次数[登录次数]"`
+	FailedLoginAttempts int       `json:"failed_login_attempts" gorm:"default:0;comment:连续登录失败次数[连续登录失败次数]"`
+	LockedUntil        *time.Time `json:"locked_until" gorm:"comment:锁定截止时间[锁定截止时间]"`
+	CreatedAt          time.Time  `json:"created_at" gorm:"autoCreateTime;comment:创建时间[创建时间]"`
+	UpdatedAt          time.Time  `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间[更新时间]"`
+	DeletedAt          *time.Time `json:"deleted_at" gorm:"index;comment:删除时间[删除时间]"`
 }
 
 // TableName 指定表名
@@ -342,4 +344,46 @@ type PermissionInfo struct {
 	Icon      string            `json:"icon"`
 	SortOrder int               `json:"sort_order"`
 	Children  []*PermissionInfo `json:"children"`
+}
+
+// UserListRequest 用户列表查询请求
+type UserListRequest struct {
+	Page     int    `json:"page" form:"page" memo:"页码" range:"1;"`
+	PageSize int    `json:"page_size" form:"page_size" memo:"每页数量" range:"1;100"`
+	Username string `json:"username" form:"username" memo:"用户名（模糊搜索）"`
+	Email    string `json:"email" form:"email" memo:"邮箱"`
+	Phone    string `json:"phone" form:"phone" memo:"手机号"`
+	Status   *int8  `json:"status" form:"status" memo:"状态筛选"`
+	RoleCode string `json:"role_code" form:"role_code" memo:"角色编码"`
+	StartAt  string `json:"start_at" form:"start_at" memo:"开始时间"`
+	EndAt    string `json:"end_at" form:"end_at" memo:"结束时间"`
+}
+
+// ResetPasswordRequest 重置密码请求
+type ResetPasswordRequest struct {
+	Target    string `json:"target" memo:"邮箱或手机号" require:"1"`
+	Code      string `json:"code" memo:"验证码" require:"1"`
+	NewPassword string `json:"new_password" memo:"新密码" require:"1"`
+}
+
+// BatchUserStatusRequest 批量修改用户状态请求
+type BatchUserStatusRequest struct {
+	UserIDs []int64 `json:"user_ids" memo:"用户ID列表" require:"1"`
+	Status  int8    `json:"status" memo:"状态" range:"0;1;2"`
+}
+
+// BatchAssignRoleRequest 批量分配角色请求
+type BatchAssignRoleRequest struct {
+	UserIDs []int64 `json:"user_ids" memo:"用户ID列表" require:"1"`
+	RoleID  int64   `json:"role_id" memo:"角色ID" require:"1"`
+}
+
+// DeviceInfo 设备信息
+type DeviceInfo struct {
+	DeviceID   string    `json:"device_id"`
+	TokenType  string    `json:"token_type"`
+	LoginAt    time.Time `json:"login_at"`
+	IPAddress  string    `json:"ip_address"`
+	UserAgent  string    `json:"user_agent"`
+	IsCurrent  bool      `json:"is_current"`
 }

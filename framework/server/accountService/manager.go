@@ -222,146 +222,59 @@ func (m *AccountManager) initDefaultRolesAndPermissions() error {
 		}
 	}
 
-	// 创建默认权限
-	defaultPermissions := []Permission{
-		// 系统管理菜单
-		{
-			Name:      "系统管理",
-			Code:      "system",
-			Type:      PermissionTypeMenu,
-			ParentID:  0,
-			Path:      "/system",
-			SortOrder: 1,
-			Status:    RoleStatusEnabled,
-		},
-		// 用户管理
-		{
-			Name:      "用户管理",
-			Code:      "system:user",
-			Type:      PermissionTypeMenu,
-			ParentID:  1,
-			Path:      "/system/user",
-			SortOrder: 1,
-			Status:    RoleStatusEnabled,
-		},
-		{
-			Name:      "用户查看",
-			Code:      "system:user:view",
-			Type:      PermissionTypeButton,
-			ParentID:  2,
-			SortOrder: 1,
-			Status:    RoleStatusEnabled,
-		},
-		{
-			Name:      "用户新增",
-			Code:      "system:user:add",
-			Type:      PermissionTypeButton,
-			ParentID:  2,
-			SortOrder: 2,
-			Status:    RoleStatusEnabled,
-		},
-		{
-			Name:      "用户编辑",
-			Code:      "system:user:edit",
-			Type:      PermissionTypeButton,
-			ParentID:  2,
-			SortOrder: 3,
-			Status:    RoleStatusEnabled,
-		},
-		{
-			Name:      "用户删除",
-			Code:      "system:user:delete",
-			Type:      PermissionTypeButton,
-			ParentID:  2,
-			SortOrder: 4,
-			Status:    RoleStatusEnabled,
-		},
-		// 角色管理
-		{
-			Name:      "角色管理",
-			Code:      "system:role",
-			Type:      PermissionTypeMenu,
-			ParentID:  1,
-			Path:      "/system/role",
-			SortOrder: 2,
-			Status:    RoleStatusEnabled,
-		},
-		{
-			Name:      "角色查看",
-			Code:      "system:role:view",
-			Type:      PermissionTypeButton,
-			ParentID:  7,
-			SortOrder: 1,
-			Status:    RoleStatusEnabled,
-		},
-		{
-			Name:      "角色新增",
-			Code:      "system:role:add",
-			Type:      PermissionTypeButton,
-			ParentID:  7,
-			SortOrder: 2,
-			Status:    RoleStatusEnabled,
-		},
-		{
-			Name:      "角色编辑",
-			Code:      "system:role:edit",
-			Type:      PermissionTypeButton,
-			ParentID:  7,
-			SortOrder: 3,
-			Status:    RoleStatusEnabled,
-		},
-		{
-			Name:      "角色删除",
-			Code:      "system:role:delete",
-			Type:      PermissionTypeButton,
-			ParentID:  7,
-			SortOrder: 4,
-			Status:    RoleStatusEnabled,
-		},
-		// 权限管理
-		{
-			Name:      "权限管理",
-			Code:      "system:permission",
-			Type:      PermissionTypeMenu,
-			ParentID:  1,
-			Path:      "/system/permission",
-			SortOrder: 3,
-			Status:    RoleStatusEnabled,
-		},
-		// 日志管理
-		{
-			Name:      "日志管理",
-			Code:      "system:log",
-			Type:      PermissionTypeMenu,
-			ParentID:  1,
-			Path:      "/system/log",
-			SortOrder: 4,
-			Status:    RoleStatusEnabled,
-		},
-		{
-			Name:      "登录日志",
-			Code:      "system:log:login",
-			Type:      PermissionTypeMenu,
-			ParentID:  13,
-			Path:      "/system/log/login",
-			SortOrder: 1,
-			Status:    RoleStatusEnabled,
-		},
-		{
-			Name:      "操作日志",
-			Code:      "system:log:operation",
-			Type:      PermissionTypeMenu,
-			ParentID:  13,
-			Path:      "/system/log/operation",
-			SortOrder: 2,
-			Status:    RoleStatusEnabled,
-		},
+	// 定义权限结构
+	type permDef struct {
+		Name       string
+		Code       string
+		Type       string
+		ParentCode string
+		Path       string
+		SortOrder  int
 	}
 
-	for _, permission := range defaultPermissions {
+	// 定义默认权限（使用 ParentCode 而非 ParentID）
+	defaultPermDefs := []permDef{
+		{Name: "系统管理", Code: "system", Type: PermissionTypeMenu, ParentCode: "", Path: "/system", SortOrder: 1},
+		{Name: "用户管理", Code: "system:user", Type: PermissionTypeMenu, ParentCode: "system", Path: "/system/user", SortOrder: 1},
+		{Name: "用户查看", Code: "system:user:view", Type: PermissionTypeButton, ParentCode: "system:user", SortOrder: 1},
+		{Name: "用户新增", Code: "system:user:add", Type: PermissionTypeButton, ParentCode: "system:user", SortOrder: 2},
+		{Name: "用户编辑", Code: "system:user:edit", Type: PermissionTypeButton, ParentCode: "system:user", SortOrder: 3},
+		{Name: "用户删除", Code: "system:user:delete", Type: PermissionTypeButton, ParentCode: "system:user", SortOrder: 4},
+		{Name: "角色管理", Code: "system:role", Type: PermissionTypeMenu, ParentCode: "system", Path: "/system/role", SortOrder: 2},
+		{Name: "角色查看", Code: "system:role:view", Type: PermissionTypeButton, ParentCode: "system:role", SortOrder: 1},
+		{Name: "角色新增", Code: "system:role:add", Type: PermissionTypeButton, ParentCode: "system:role", SortOrder: 2},
+		{Name: "角色编辑", Code: "system:role:edit", Type: PermissionTypeButton, ParentCode: "system:role", SortOrder: 3},
+		{Name: "角色删除", Code: "system:role:delete", Type: PermissionTypeButton, ParentCode: "system:role", SortOrder: 4},
+		{Name: "权限管理", Code: "system:permission", Type: PermissionTypeMenu, ParentCode: "system", Path: "/system/permission", SortOrder: 3},
+		{Name: "日志管理", Code: "system:log", Type: PermissionTypeMenu, ParentCode: "system", Path: "/system/log", SortOrder: 4},
+		{Name: "登录日志", Code: "system:log:login", Type: PermissionTypeMenu, ParentCode: "system:log", Path: "/system/log/login", SortOrder: 1},
+		{Name: "操作日志", Code: "system:log:operation", Type: PermissionTypeMenu, ParentCode: "system:log", Path: "/system/log/operation", SortOrder: 2},
+	}
+
+	// 使用 codeToID map 维护创建后的真实 ID
+	codeToID := make(map[string]int64)
+
+	for _, pd := range defaultPermDefs {
+		parentID := int64(0)
+		if pd.ParentCode != "" {
+			parentID = codeToID[pd.ParentCode]
+		}
+
+		permission := Permission{
+			Name:      pd.Name,
+			Code:      pd.Code,
+			Type:      pd.Type,
+			ParentID:  parentID,
+			Path:      pd.Path,
+			SortOrder: pd.SortOrder,
+			Status:    RoleStatusEnabled,
+		}
+
 		if err := m.db.WithContext(ctx).Create(&permission).Error; err != nil {
 			return fmt.Errorf("创建默认权限失败: %w", err)
 		}
+
+		codeToID[pd.Code] = permission.ID
 	}
 
 	// 为超级管理员分配所有权限
