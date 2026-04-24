@@ -35,7 +35,9 @@ func Init() {
 	gaia.InfoF("当前环境为[%s]", gaia.GetEnvFlag())
 
 	//框架远程配置中心注入
-	remoteConfig.RegisterConsulRemoteConf()
+	if _, err := remoteConfig.InitFromConfig(); err != nil {
+		gaia.WarnF("远程配置中心初始化失败，将无法使用远程配置功能: %s", err.Error())
+	}
 
 	ctx := context.Background()
 	_, err := tracer.SetupTracer(ctx, gaia.GetSystemEnName())
@@ -77,4 +79,10 @@ func Init() {
 	if hasRequiredMissing := checkComponents(); hasRequiredMissing {
 		panic("存在必选组件未配置，无法启动。请检查上方的组件检测报告。")
 	}
+
+	// ===== 远程日志状态初始化 =====
+	// 组件检查完成后：根据 ES 配置状态同步远程日志开关；
+	// 并启动后台 watcher，支持 ES 配置热恢复（从无到有）/ 热关闭（从有到无）
+	syncRemoteLogByESConfig()
+	startRemoteLogWatcher()
 }

@@ -96,7 +96,13 @@ func (c *CommonOperateModel) CommonOperate(req Request) (any, error) {
 	if len(c.Condition) != 0 {
 		c.checkCondition()
 	}
-	if len(c.Columns) != 0 {
+	// 对 insert/update：即使客户端未显式传 columns，schema 中声明了 InsertUseDefault/UpdateUseDefault
+	// 的字段仍需补默认值，所以不能再用 len(c.Columns)!=0 作为短路守卫。
+	// 对 delete：不关心 columns，无需处理。
+	if c.OperateType == "insert" || c.OperateType == "update" {
+		if c.Columns == nil {
+			c.Columns = map[string]any{}
+		}
 		if err := c.checkColumns(); err != nil {
 			return nil, err
 		}
@@ -113,40 +119,55 @@ func (c *CommonOperateModel) CommonOperate(req Request) (any, error) {
 }
 
 func (c *CommonOperateModel) checkColumns() error {
+	// 预建索引：sqlName -> CommonOperateColumn，用于 nullable 校验 O(1) 查找
+	colBySqlName := make(map[string]CommonOperateColumn, len(c.schemaInfo.Columns))
+	for _, column := range c.schemaInfo.Columns {
+		colBySqlName[column.SqlName] = column
+	}
+
 	newColumns := map[string]any{}
 
 	for _, column := range c.schemaInfo.Columns {
-		flag := false
-		for k, v := range c.Columns {
-			if k == column.Id {
-				flag = true
-				tempV := v
-				if column.InsertHandler != "" && c.OperateType == "insert" {
-					tempV = c.valueHandler(v, column.InsertHandler)
+		if v, ok := c.Columns[column.Id]; ok {
+			tempV := v
+			var hErr error
+			if column.InsertHandler != "" && c.OperateType == "insert" {
+				tempV, hErr = c.valueHandler(v, column.InsertHandler)
+				if hErr != nil {
+					return hErr
 				}
-				if column.UpdateHandler != "" && c.OperateType == "update" {
-					tempV = c.valueHandler(v, column.UpdateHandler)
-				}
-				newColumns[column.SqlName] = tempV
-				break
 			}
+			if column.UpdateHandler != "" && c.OperateType == "update" {
+				tempV, hErr = c.valueHandler(v, column.UpdateHandler)
+				if hErr != nil {
+					return hErr
+				}
+			}
+			newColumns[column.SqlName] = tempV
+			continue
 		}
-
-		if !flag && column.InsertUseDefault && c.OperateType == "insert" {
-			newColumns[column.SqlName] = c.valueHandler(column.DefaultValue, column.InsertHandler)
+		// 未在请求中出现：根据 useDefault 决定是否补默认值
+		if column.InsertUseDefault && c.OperateType == "insert" {
+			dv, dErr := c.valueHandler(column.DefaultValue, column.InsertHandler)
+			if dErr != nil {
+				return dErr
+			}
+			newColumns[column.SqlName] = dv
 		}
-		if !flag && column.UpdateUseDefault && c.OperateType == "update" {
-			newColumns[column.SqlName] = c.valueHandler(column.DefaultValue, column.UpdateHandler)
+		if column.UpdateUseDefault && c.OperateType == "update" {
+			dv, dErr := c.valueHandler(column.DefaultValue, column.UpdateHandler)
+			if dErr != nil {
+				return dErr
+			}
+			newColumns[column.SqlName] = dv
 		}
 	}
 
+	// 对最终列做 nullable 校验（O(N)）
 	for k, v := range newColumns {
-		for _, column := range c.schemaInfo.Columns {
-			if k == column.SqlName {
-				if !column.Nullable && isEmptyValue(v) {
-					return errors.New(k + "不允许为空")
-				}
-				break
+		if column, ok := colBySqlName[k]; ok {
+			if !column.Nullable && isEmptyValue(v) {
+				return errors.New(k + "不允许为空")
 			}
 		}
 	}
@@ -154,8 +175,13 @@ func (c *CommonOperateModel) checkColumns() error {
 	return nil
 }
 
-// isEmptyValue 判断是否为空值
-// 注意：布尔类型的 false 不算空值
+// isEmptyValue 判断是否为空值。
+// 语义：
+//   - nil 视为空
+//   - 空字符串视为空
+//   - 空 slice / 空 map 视为空
+//   - 布尔 false 不算空
+//   - 数值 0 不算空（0 是合法的库存 / 状态 / 序号值；过去把 0 视为空导致合法入库被拒）
 func isEmptyValue(v any) bool {
 	if v == nil {
 		return true
@@ -163,48 +189,34 @@ func isEmptyValue(v any) bool {
 	switch val := v.(type) {
 	case string:
 		return val == ""
-	case int:
-		return val == 0
-	case int8:
-		return val == 0
-	case int16:
-		return val == 0
-	case int32:
-		return val == 0
-	case int64:
-		return val == 0
-	case uint:
-		return val == 0
-	case uint8:
-		return val == 0
-	case uint16:
-		return val == 0
-	case uint32:
-		return val == 0
-	case uint64:
-		return val == 0
-	case float32:
-		return val == 0
-	case float64:
-		return val == 0
-	case bool:
-		return false // 布尔类型 false 不算空值
+	case []any:
+		return len(val) == 0
+	case []string:
+		return len(val) == 0
+	case []int:
+		return len(val) == 0
+	case []int64:
+		return len(val) == 0
+	case []float64:
+		return len(val) == 0
+	case map[string]any:
+		return len(val) == 0
+	case map[string]string:
+		return len(val) == 0
 	default:
 		return false
 	}
 }
 
-func (c *CommonOperateModel) valueHandler(columnValue any, handlerName string) any {
+func (c *CommonOperateModel) valueHandler(columnValue any, handlerName string) (any, error) {
 	if handlerName == "" {
-		return columnValue
+		return columnValue, nil
 	}
 	handler, err := valueHandler.GetValueHandler(handlerName)
 	if err != nil || handler == nil {
-		gaia.Log(gaia.LogErrorLevel, fmt.Sprintf("GetInsertHandler[%s]Err:%s", handlerName, err))
-		return columnValue
+		return nil, fmt.Errorf("valueHandler [%s] not registered: %w", handlerName, err)
 	}
-
-	return handler.NewValue(columnValue)
+	return handler.NewValue(columnValue), nil
 }
 
 func (c *CommonOperateModel) checkCondition() {
@@ -218,6 +230,8 @@ func (c *CommonOperateModel) checkCondition() {
 	for k, v := range c.Condition {
 		if sqlK, ok := conditionSqlName[k]; ok {
 			newCondition[sqlK] = v
+		} else {
+			gaia.WarnF("operate condition [%s] not found in schema [%s], dropped", k, c.schemaInfo.Schema)
 		}
 	}
 	c.Condition = newCondition
@@ -262,7 +276,11 @@ func (c *CommonOperateModel) GetAllCommonOperateSchema(req Request) (any, error)
 func (c *CommonOperateModel) GetOperateSchemaDetail(req Request) (any, error) {
 	query := req.GetUrlQuery("schema")
 	if len(query) == 0 {
-		return nil, fmt.Errorf("schema [%s] is not exist", query)
+		return nil, errors.New("schema 参数不能为空")
+	}
+	// 防路径穿越：校验 schema 名，与 loadOperateSchema 保持一致
+	if err := validateSchemaName(query); err != nil {
+		return nil, err
 	}
 
 	file, err := os.ReadFile(fmt.Sprintf(DefaultCommonOperateFileFmt, query))
@@ -274,7 +292,7 @@ func (c *CommonOperateModel) GetOperateSchemaDetail(req Request) (any, error) {
 		return nil, err
 	}
 
-	return map[string]any{"columns": res["columns"]}, nil
+	return res, nil
 }
 
 func (c *CommonOperateModel) writerInsert(dbSchema, writerName string) (lastId int64, err error) {
@@ -332,6 +350,9 @@ func (d *DefaultWriter) SetDbSchema(dbSchema string) error {
 }
 
 func (d *DefaultWriter) Insert(table string, columns, extInfo map[string]any) (lastId int64, err error) {
+	if len(columns) == 0 {
+		return 0, errors.New("请给出要插入的字段，禁止空插入")
+	}
 	db, err := d.db.DB()
 	if err != nil {
 		return 0, err
@@ -345,7 +366,13 @@ func (d *DefaultWriter) Insert(table string, columns, extInfo map[string]any) (l
 		placeHolders = append(placeHolders, "?")
 	}
 
-	exec, err := db.Exec(fmt.Sprintf("INSERT INTO `%s` (%s) VALUES(%s)",
+	// 使用带 context 的 ExecContext，使 Insert 也能挂上 trace span。
+	// 当 d.ctx 为 nil（调用方未设置）时退化为 context.Background()，避免 nil ctx panic。
+	ctx := d.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	exec, err := db.ExecContext(ctx, fmt.Sprintf("INSERT INTO `%s` (%s) VALUES(%s)",
 		table, strings.Join(columnTemp, ","),
 		strings.Join(placeHolders, ",")), values...)
 	if err != nil {
@@ -359,7 +386,15 @@ func (d *DefaultWriter) Update(tableName string, columns, condition, extInfo map
 	if len(condition) == 0 {
 		return 0, errors.New("请给出条件，禁止无条件更新")
 	}
-	newCondition, param := getConditionForOperate(condition, tableName)
+	if len(columns) == 0 {
+		return 0, errors.New("请给出要更新的字段，禁止空更新")
+	}
+	newCondition, param := getConditionForOperate(condition)
+	// 关键安全校验：所有条件都可能因不支持的操作符而被跳过，
+	// 若处理后的条件为空则会产生无条件更新（UPDATE ... WHERE ），必须禁止。
+	if len(newCondition) == 0 {
+		return 0, errors.New("处理后的条件为空（可能使用了不支持的操作符），禁止无条件更新")
+	}
 	condExp := strings.Join(newCondition, " and ")
 
 	tx := d.db.WithContext(d.ctx).Table(tableName).Where(condExp, param...).Updates(columns)
@@ -372,7 +407,7 @@ func (d *DefaultWriter) Update(tableName string, columns, condition, extInfo map
 
 func (d *DefaultWriter) Delete(tableName string, condition, extInfo map[string]any) (rows int64, err error) {
 	// 必须使用处理后的 condition 进行校验，防止 checkCondition 过滤掉所有条件后导致无条件删除
-	newCondition, param := getConditionForOperate(condition, tableName)
+	newCondition, param := getConditionForOperate(condition)
 	if len(newCondition) == 0 {
 		return 0, errors.New("请给出条件，禁止无条件删除")
 	}
@@ -386,34 +421,40 @@ func (d *DefaultWriter) Delete(tableName string, condition, extInfo map[string]a
 	return tx.RowsAffected, nil
 }
 
-func getConditionForOperate(condition map[string]any, mainTable string) (
+// parseOperator 把前端操作符映射为 SQL 操作符。
+// 返回 sqlOp 为 "" 表示不支持该操作符，relatesNull 表示该操作符不需要占位参数。
+func parseOperator(exp string) (sqlOp string, relatesNull bool) {
+	switch exp {
+	case "gte", ">=":
+		return ">=", false
+	case "lte", "<=":
+		return "<=", false
+	case "gt", ">":
+		return ">", false
+	case "lt", "<":
+		return "<", false
+	case "<>", "neq", "!=":
+		return "<>", false
+	case "eq", "=":
+		return "=", false
+	case "like", "Like":
+		return "like", false
+	case "is null", "is not null":
+		return exp, true
+	}
+	return "", false
+}
+
+// getConditionForOperate 把 {key: value} 形式的条件转换为 GORM Where 可用的 SQL 片段和参数。
+// 注意：key 已经由 CommonOperateModel.checkCondition 替换为 "<table>.<col>" 形式，这里不再需要主表名。
+func getConditionForOperate(condition map[string]any) (
 	newCondition []string, newConditionParam []any) {
 	for key, vl := range condition {
 		temp := key
 		switch v := vl.(type) {
 		case map[string]any:
 			for exp, val := range v {
-				expTemp := ""
-				relateNull := false
-				switch exp {
-				case "gte", ">=":
-					expTemp = ">="
-				case "lte", "<=":
-					expTemp = "<="
-				case "gt", ">":
-					expTemp = ">"
-				case "lt", "<":
-					expTemp = "<"
-				case "<>", "neq", "!=":
-					expTemp = "<>"
-				case "eq", "=":
-					expTemp = "="
-				case "like", "Like":
-					expTemp = "like"
-				case "is null", "is not null":
-					expTemp = exp
-					relateNull = true
-				}
+				expTemp, relateNull := parseOperator(exp)
 				if expTemp == "" {
 					continue
 				}

@@ -7,138 +7,110 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	ristretto "github.com/dgraph-io/ristretto/v2"
 )
 
-// 添加缓存大小限制和淘汰策略
-var maxCacheSize = 10000 // 默认最大缓存数量
+const (
+	defaultMaxCacheSize        = 10000
+	cacheNumCountersMultiplier = 10
+	cacheBufferItems           = 64
+)
 
-// 添加优雅关闭机制
-var stopCleanCh chan struct{}
+var (
+	maxCacheSize = defaultMaxCacheSize
 
-// Cache逻辑
-// 本Cache封装使用一个特定的全局变量存储缓存数据，因此仅适用于同一Server实例服务内
-// 数据结构体
-type cacheNode struct {
-	Data       any
-	Expiration time.Time
-}
-
-var sysGlobalCacheStack map[string]cacheNode
-var mutexSysGlobalCacheStack sync.RWMutex
+	globalCache   *ristretto.Cache[string, any]
+	globalCacheMu sync.RWMutex
+)
 
 func init() {
-	sysGlobalCacheStack = make(map[string]cacheNode)
-	stopCleanCh = make(chan struct{})
-	clean()
+	globalCache = mustNewRistrettoCache(maxCacheSize)
 }
 
 // Cache 逻辑体
-type Cache struct {
-}
+type Cache struct{}
 
 // NewCache 实例化
 func NewCache() *Cache {
 	return &Cache{}
 }
 
-// SetMaxCacheSize 添加配置函数，允许用户自定义最大缓存大小
+func normalizedMaxCacheSize(size int) int {
+	if size <= 0 {
+		return defaultMaxCacheSize
+	}
+	return size
+}
+
+func newRistrettoCache(size int) (*ristretto.Cache[string, any], error) {
+	normalizedSize := normalizedMaxCacheSize(size)
+	return ristretto.NewCache(&ristretto.Config[string, any]{
+		NumCounters:        int64(normalizedSize * cacheNumCountersMultiplier),
+		MaxCost:            int64(normalizedSize),
+		BufferItems:        cacheBufferItems,
+		IgnoreInternalCost: true,
+	})
+}
+
+func mustNewRistrettoCache(size int) *ristretto.Cache[string, any] {
+	cache, err := newRistrettoCache(size)
+	if err != nil {
+		panic(fmt.Sprintf("gaia: init cache failed: %v", err))
+	}
+	return cache
+}
+
+func getGlobalCache() *ristretto.Cache[string, any] {
+	globalCacheMu.RLock()
+	cache := globalCache
+	globalCacheMu.RUnlock()
+	if cache != nil {
+		return cache
+	}
+
+	globalCacheMu.Lock()
+	defer globalCacheMu.Unlock()
+	if globalCache == nil {
+		globalCache = mustNewRistrettoCache(maxCacheSize)
+	}
+	return globalCache
+}
+
+// SetMaxCacheSize 允许用户自定义最大缓存大小。
 func SetMaxCacheSize(size int) {
-	mutexSysGlobalCacheStack.Lock()
-	defer mutexSysGlobalCacheStack.Unlock()
-	maxCacheSize = size
-}
+	globalCacheMu.Lock()
+	defer globalCacheMu.Unlock()
 
-// 定时清理过期的缓存数据
-func clean() {
-	//Log("INFO", "Start a daemon goroutine to clean up expired data.")
-	go func() {
-		defer CatchPanic()
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				// 只获取读锁，收集需要删除的键
-				mutexSysGlobalCacheStack.RLock()
-				var expiredKeys []string
-				now := time.Now()
-				for key, node := range sysGlobalCacheStack {
-					if now.After(node.Expiration) {
-						expiredKeys = append(expiredKeys, key)
-					}
-				}
-				mutexSysGlobalCacheStack.RUnlock()
-
-				// 只在需要删除时获取写锁
-				if len(expiredKeys) > 0 {
-					mutexSysGlobalCacheStack.Lock()
-					for _, key := range expiredKeys {
-						// 再次检查，避免并发问题
-						if node, exists := sysGlobalCacheStack[key]; exists && now.After(node.Expiration) {
-							delete(sysGlobalCacheStack, key)
-						}
-					}
-					mutexSysGlobalCacheStack.Unlock()
-				}
-			case <-stopCleanCh:
-				return
-			}
-		}
-	}()
-}
-
-// CloseClean 添加关闭函数
-func CloseClean() {
-	close(stopCleanCh)
+	maxCacheSize = normalizedMaxCacheSize(size)
+	if globalCache == nil {
+		globalCache = mustNewRistrettoCache(maxCacheSize)
+		return
+	}
+	globalCache.UpdateMaxCost(int64(maxCacheSize))
 }
 
 // Set 设置一个值到cache中
 func (o *Cache) Set(key string, value any, expiration time.Duration) {
-	mutexSysGlobalCacheStack.Lock()
-	defer mutexSysGlobalCacheStack.Unlock()
-
-	// 检查缓存大小，如果超过限制，删除最早过期的数据
-	if len(sysGlobalCacheStack) >= maxCacheSize {
-		var oldestKey string
-		var oldestTime time.Time
-		for k, node := range sysGlobalCacheStack {
-			if oldestTime.IsZero() || node.Expiration.Before(oldestTime) {
-				oldestKey = k
-				oldestTime = node.Expiration
-			}
-		}
-		delete(sysGlobalCacheStack, oldestKey)
+	cache := getGlobalCache()
+	if expiration <= 0 {
+		cache.Del(key)
+		cache.Wait()
+		return
 	}
 
-	sysGlobalCacheStack[key] = cacheNode{Data: value, Expiration: time.Now().Add(expiration)}
+	cache.SetWithTTL(key, value, 1, expiration)
+	cache.Wait()
 }
 
 // Get 从cache中获取一个值
 func (o *Cache) Get(key string) any {
-	//操作全局map，加锁
-	mutexSysGlobalCacheStack.RLock()
-	v, ok := sysGlobalCacheStack[key]
-	mutexSysGlobalCacheStack.RUnlock()
+	cache := getGlobalCache()
+	value, ok := cache.Get(key)
 	if !ok {
 		return nil
 	}
-
-	//检查是否过期
-	if time.Now().Before(v.Expiration) {
-		return v.Data
-	}
-
-	// 异步删除过期数据
-	go func() {
-		mutexSysGlobalCacheStack.Lock()
-		// 再次检查，避免并发问题
-		if node, exists := sysGlobalCacheStack[key]; exists && time.Now().After(node.Expiration) {
-			delete(sysGlobalCacheStack, key)
-		}
-		mutexSysGlobalCacheStack.Unlock()
-	}()
-
-	return nil
+	return value
 }
 
 // SetString 设置一个字符串到cache中
@@ -168,9 +140,8 @@ func (o *Cache) GetInt(key string) int64 {
 	}
 	if val, ok := v.(int64); ok {
 		return val
-	} else {
-		return 0
 	}
+	return 0
 }
 
 // SetMap 设置一个map[string]string类型到cache中
@@ -240,18 +211,15 @@ func (o *Cache) GetStringList(key string) []string {
 	}
 	if val, ok := v.([]string); ok {
 		return val
-	} else {
-		return nil
 	}
+	return nil
 }
 
 // Delete 删除key所对应的缓存值
 func (o *Cache) Delete(key string) {
-	mutexSysGlobalCacheStack.Lock()
-	defer mutexSysGlobalCacheStack.Unlock()
-	if len(sysGlobalCacheStack) > 0 {
-		delete(sysGlobalCacheStack, key)
-	}
+	cache := getGlobalCache()
+	cache.Del(key)
+	cache.Wait()
 }
 
 // CacheLoad 加载数据，如果缓存中存在数据，则直接使用，如果不存在数据，则调用 fn 构建数据返回，同时设置缓存
@@ -270,38 +238,20 @@ func CacheLoad[O any](ckey string, expiration time.Duration, fn func() (result O
 		return
 	}
 
-	// 直接使用全局缓存，避免创建不必要的实例
-	mutexSysGlobalCacheStack.RLock()
-	v, ok := sysGlobalCacheStack[ckey]
-	mutexSysGlobalCacheStack.RUnlock()
-	if ok {
-		if time.Now().Before(v.Expiration) {
-			if v, ok := v.Data.(O); ok {
-				return v, nil
-			}
-		} else {
-			// 异步删除过期数据
-			go func() {
-				mutexSysGlobalCacheStack.Lock()
-				if node, exists := sysGlobalCacheStack[ckey]; exists && time.Now().After(node.Expiration) {
-					delete(sysGlobalCacheStack, ckey)
-				}
-				mutexSysGlobalCacheStack.Unlock()
-			}()
+	cache := NewCache()
+	if cached := cache.Get(ckey); cached != nil {
+		if typed, ok := cached.(O); ok {
+			return typed, nil
 		}
 	}
 
-	//未命中缓存，构建数据
 	result, err = fn()
 	if err != nil {
 		return result, err
 	}
 
 	if !Empty(result) {
-		// 设置缓存
-		mutexSysGlobalCacheStack.Lock()
-		sysGlobalCacheStack[ckey] = cacheNode{Data: result, Expiration: time.Now().Add(expiration)}
-		mutexSysGlobalCacheStack.Unlock()
+		cache.Set(ckey, result, expiration)
 	}
 
 	return

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/dics"
 )
@@ -135,31 +137,36 @@ func (c *CommonQueryModel) CommonQuery(req Request) (any, error) {
 		return nil, errors.New("禁止无条件查询")
 	}
 
-	joinStr := ""
+	var joinBuilder strings.Builder
 	joins = gaia.UniqueList(append(joins, joins2...))
 	for _, join := range joins {
-		joinStr += " " + joinsIdMap[join]
+		joinBuilder.WriteByte(' ')
+		joinBuilder.WriteString(joinsIdMap[join])
 	}
+	joinStr := joinBuilder.String()
 
 	condExp := strings.Join(conditions, " and ")
 
 	order := getOrder(c.Sort, columnIdMap)
 	res := map[string]any{}
-	var errTemp error
 	var sum int64 = 0
 	data := []map[string]any{}
-	tx := db.GetGormDb().WithContext(req.TraceContext).Table(schema.TableName).Select(newColumns).Joins(joinStr).Where(condExp, params...)
+
+	baseTx := db.GetGormDb().WithContext(req.TraceContext).Table(schema.TableName).
+		Joins(joinStr).Where(condExp, params...)
+
 	if c.NeedRowNums {
-		tx = tx.
-			Limit(int(c.Limit)).Offset(int(c.Start)).Order(order).
-			Find(&data).Offset(-1).Limit(-1).Count(&sum)
-	} else {
-		tx = tx.Limit(int(c.Limit)).Offset(int(c.Start)).Order(order).Find(&data)
+		if err := baseTx.Session(&gorm.Session{}).Count(&sum).Error; err != nil {
+			gaia.Error(err.Error())
+			return nil, err
+		}
 	}
-	if tx.Error != nil {
-		gaia.Error(tx.Error.Error())
-		errTemp = tx.Error
-		return nil, errTemp
+
+	if err := baseTx.Session(&gorm.Session{}).Select(newColumns).
+		Limit(int(c.Limit)).Offset(int(c.Start)).Order(order).
+		Find(&data).Error; err != nil {
+		gaia.Error(err.Error())
+		return nil, err
 	}
 	if c.schemaInfo.TimeFormat != "" {
 		// 优化：只遍历已知的列，而不是所有字段
@@ -174,7 +181,7 @@ func (c *CommonQueryModel) CommonQuery(req Request) (any, error) {
 	res["data"] = data
 	res["sum"] = sum
 
-	return res, errTemp
+	return res, nil
 }
 
 func loadQuerySchema(schema string) (CommonQuerySchema, error) {
@@ -225,6 +232,7 @@ func getCondition(condition map[string]any, condColumnIdMap map[string]string, m
 		temp := ""
 
 		if vt, ok := condColumnIdMap[key]; !ok {
+			gaia.WarnF("query condition [%s] not found in schema, dropped", key)
 			continue
 		} else {
 			split := strings.Split(vt, ".")
@@ -237,31 +245,17 @@ func getCondition(condition map[string]any, condColumnIdMap map[string]string, m
 			temp = vt
 		}
 
-		switch v.(type) {
+		switch vv := v.(type) {
 		case map[string]any:
-			for exp, val := range v.(map[string]any) {
-				expTemp := ""
-				relateNull := false
-				switch exp {
-				case "gte", ">=":
-					expTemp = ">="
-				case "lte", "<=":
-					expTemp = "<="
-				case "gt", ">":
-					expTemp = ">"
-				case "lt", "<":
-					expTemp = "<"
-				case "<>", "neq", "!=":
-					expTemp = "<>"
-				case "eq", "=":
-					expTemp = "="
-				case "like", "Like":
-					expTemp = "like"
-				case "is null", "is not null":
-					expTemp = exp
-					relateNull = true
-				}
+			for exp, val := range vv {
+				expTemp, relateNull := parseOperator(exp)
 				if expTemp == "" {
+					gaia.WarnF("query condition operator [%s] not supported, skipped", exp)
+					continue
+				}
+
+				// 统一支持 ignoreEmpty：忽略空值的操作符条件
+				if ignoreEmpty && isEmptyValue(val) {
 					continue
 				}
 
@@ -275,27 +269,48 @@ func getCondition(condition map[string]any, condColumnIdMap map[string]string, m
 			}
 		case []any:
 			newCondition = append(newCondition, temp+" in ?")
-			newConditionParam = append(newConditionParam, v)
+			newConditionParam = append(newConditionParam, vv)
 		default:
-			if !(ignoreEmpty && v == "") {
+			if !(ignoreEmpty && isEmptyValue(vv)) {
 				newCondition = append(newCondition, temp+" = ?")
-				newConditionParam = append(newConditionParam, v)
+				newConditionParam = append(newConditionParam, vv)
 			}
 		}
 	}
 	return
 }
 
+// isSafeSqlIdentifierPath 校验形如 "table.col" 或 "col" 的标识符是否安全：
+// 只允许 [a-zA-Z0-9_.]，长度不超过 128。
+// 深度防御：即便 schema JSON 文件被写脏，也不会把非法字符拼进 ORDER BY。
+func isSafeSqlIdentifierPath(s string) bool {
+	if len(s) == 0 || len(s) > 128 {
+		return false
+	}
+	for _, r := range s {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '.') {
+			return false
+		}
+	}
+	return true
+}
+
 func getOrder(kvs []SortKv, columnIdMap map[string]string) string {
 	res := []string{}
 	for _, kv := range kvs {
-		if v, ok := columnIdMap[kv.Name]; ok {
-			if kv.Desc {
-				res = append(res, v+" desc")
-			} else {
-				res = append(res, v+" asc")
-			}
-
+		v, ok := columnIdMap[kv.Name]
+		if !ok {
+			continue
+		}
+		// 深度防御：ORDER BY 直接字符串拼接进 SQL（GORM 不做参数化），
+		// 必须确保字段名是纯标识符。
+		if !isSafeSqlIdentifierPath(v) {
+			continue
+		}
+		if kv.Desc {
+			res = append(res, v+" desc")
+		} else {
+			res = append(res, v+" asc")
 		}
 	}
 	return strings.Join(res, ",")
@@ -315,7 +330,11 @@ func (c *CommonQueryModel) GetAllCommonQuerySchema(req Request) (any, error) {
 func (c *CommonQueryModel) GetQuerySchemaDetail(req Request) (any, error) {
 	query := req.GetUrlQuery("schema")
 	if len(query) == 0 {
-		return nil, fmt.Errorf("schema [%s] is not exist", query)
+		return nil, errors.New("schema 参数不能为空")
+	}
+	// 防路径穿越：校验 schema 名，与 loadQuerySchema 保持一致
+	if err := validateSchemaName(query); err != nil {
+		return nil, err
 	}
 
 	file, err := os.ReadFile(fmt.Sprintf(DefaultCommonQueryFileFmt, query))
@@ -327,7 +346,7 @@ func (c *CommonQueryModel) GetQuerySchemaDetail(req Request) (any, error) {
 		return nil, err
 	}
 
-	return map[string]any{"columns": res["columns"], "condition": res["condition"]}, nil
+	return res, nil
 }
 
 // validateTableName 校验表名是否合法，防止 SQL 注入
@@ -362,10 +381,31 @@ func validateSchemaName(schema string) error {
 	return nil
 }
 
+// validateConfigKey 校验配置 key 是否合法（gaia 配置路径形如 Framework.Mysql、Business.Sub.Key）
+// 允许字母、数字、下划线、连字符、点号；不允许 ".."、"/"、"\"
+func validateConfigKey(key string) error {
+	if len(key) == 0 {
+		return errors.New("配置 key 不能为空")
+	}
+	if strings.Contains(key, "..") || strings.Contains(key, "/") || strings.Contains(key, "\\") {
+		return errors.New("配置 key 不合法")
+	}
+	for _, r := range key {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.') {
+			return errors.New("配置 key 只能包含字母、数字、下划线、连字符和点号")
+		}
+	}
+	return nil
+}
+
 func generateCommon(req Request) (any, error) {
 	dbSchema := req.GetUrlQuery("dbSchema")
 	table := req.GetUrlQuery("table")
 
+	// 校验 dbSchema（gaia 配置 key），允许点号（如 "Framework.Mysql"）但防止路径穿越
+	if err := validateConfigKey(dbSchema); err != nil {
+		return nil, fmt.Errorf("dbSchema 校验失败: %w", err)
+	}
 	// 校验表名，防止 SQL 注入
 	if err := validateTableName(table); err != nil {
 		return nil, err
@@ -404,9 +444,7 @@ func generateCommon(req Request) (any, error) {
 	if rows == nil {
 		return nil, errors.New("desc table nil")
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
+	defer rows.Close()
 
 	fetch, err := gaia.MysqlFetch(rows)
 	if err != nil {
@@ -509,12 +547,28 @@ func generateCommon(req Request) (any, error) {
 	qsFileName := fmt.Sprintf(DefaultCommonQueryFileFmt, table)
 	osFileName := fmt.Sprintf(DefaultCommonOperateFileFmt, table)
 
+	// 安全：默认不覆盖已存在的 schema 文件，避免误操作冲掉已调优过的配置。
+	// 如需强制覆盖，显式传 ?force=1
+	force := req.GetUrlQuery("force") == "1"
+	if !force {
+		if gaia.FileExists(qsFileName) {
+			return nil, fmt.Errorf("query schema 已存在: %s（传 force=1 覆盖）", qsFileName)
+		}
+		if gaia.FileExists(osFileName) {
+			return nil, fmt.Errorf("operate schema 已存在: %s（传 force=1 覆盖）", osFileName)
+		}
+	}
+
 	if err := gaia.FilePutContent(qsFileName, qsContent); err != nil {
 		return nil, err
 	}
 	if err := gaia.FilePutContent(osFileName, osContent); err != nil {
 		return nil, err
 	}
+	// schema 文件已更新，主动清除 5 分钟缓存，使下一次请求立即生效
+	cache := gaia.NewCache()
+	cache.Delete("common_query_schema_" + table)
+	cache.Delete("common_operate_schema_" + table)
 	return map[string]any{"QueryContent": qsContent, "OperateContent": osContent}, nil
 }
 

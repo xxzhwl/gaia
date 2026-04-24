@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/xxzhwl/gaia"
@@ -25,6 +26,41 @@ import (
 var logTimeFormat = "2006-01-02 15:04:05.000"
 
 var DefaultLoggerPath = "var" + gaia.Sep + "logs" + gaia.Sep
+
+// remoteLogEnabled 指示远程日志推送是否启用。
+//
+// 状态由 framework.Init 设置，后台 watcher 可能周期性地切换：
+//   - 0 (false) 表示禁用：PushLog 直接 no-op，不会尝试连 ES
+//   - 1 (true)  表示启用：走正常推送路径
+//
+// 默认值 0 (禁用) —— 保守策略：在 framework.Init 明确判定 ES 可用之前，
+// 先不做任何远程推送，避免启动期产生雪崩式的 "创建ES客户端失败" 错误日志。
+// 使用 atomic.Int32 以支持无锁并发读写（PushLog 位于热路径）。
+var remoteLogEnabled atomic.Int32
+
+// SetRemoteLogEnabled 开关远程日志推送（由 framework 层调用）。
+// 该函数幂等：重复设置相同值不会产生副作用。
+// 用户可以通过配置 "Logger.DisableRemote=true" 硬性禁用（优先级最高，框架无法覆盖）。
+func SetRemoteLogEnabled(enabled bool) {
+	var newVal int32
+	if enabled {
+		newVal = 1
+	}
+	old := remoteLogEnabled.Swap(newVal)
+	if old == newVal {
+		return
+	}
+	if enabled {
+		gaia.Println(gaia.LogInfoLevel, "[Logger] 远程日志推送已启用")
+	} else {
+		gaia.Println(gaia.LogWarnLevel, "[Logger] 远程日志推送已禁用")
+	}
+}
+
+// IsRemoteLogEnabled 返回远程日志推送是否启用。
+func IsRemoteLogEnabled() bool {
+	return remoteLogEnabled.Load() == 1
+}
 
 const (
 	ApiLogIndex        = "api_log"
@@ -595,8 +631,13 @@ func (d *DefaultLogger) CreateRemoteLogDoc(arg createRemoteLogDocArg) {
 }
 
 func (d *DefaultLogger) PushLog(logType string, logIndex string, doc any) error {
-	// 检查是否禁用远程日志
+	// 硬性总闸：用户配置 Logger.DisableRemote=true 时，永久禁用远程日志（优先级最高）
 	if gaia.GetSafeConfBool("Logger.DisableRemote") {
+		return nil
+	}
+
+	// 运行时开关：由 framework 层根据 ES 配置状态 / watcher 动态维护
+	if !IsRemoteLogEnabled() {
 		return nil
 	}
 
@@ -612,10 +653,18 @@ func (d *DefaultLogger) PushLog(logType string, logIndex string, doc any) error 
 			return nil
 		}
 
+		// 防御：buffer 的 worker goroutine 持续存在，可能在远程日志被关闭后依旧被调度。
+		// 在真正连 ES 之前再检查一次开关状态，避免产生无谓的连接失败日志。
+		if !IsRemoteLogEnabled() || gaia.GetSafeConfBool("Logger.DisableRemote") {
+			return nil
+		}
+
 		// 创建ES客户端
 		workEs, err := es.NewFrameWorkEs()
 		if err != nil {
-			gaia.ErrorF("创建ES客户端失败: %v", err)
+			// 直接打到控制台，不能走 gaia.ErrorF ——否则错误日志又会进入 PushLog 形成雪崩。
+			// 这里也说明运行时 ES 状态出现异常，watcher 会在下一轮检测到并关闭远程推送。
+			gaia.Println(gaia.LogErrorLevel, fmt.Sprintf("创建ES客户端失败: %v", err))
 			return fmt.Errorf("创建ES客户端失败: %w", err)
 		}
 
