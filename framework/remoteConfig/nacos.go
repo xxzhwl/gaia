@@ -68,42 +68,13 @@ func NewNacosConfigCenter(cli *nacos.Client, opt BaseOption) (*NacosConfigCenter
 
 // newNacosProvider 工厂函数
 func newNacosProvider(cfg map[string]any) (ConfigCenter, error) {
-	sub, _ := dic.GetValueByMapPath(cfg, "Nacos")
-	subMap, _ := sub.(map[string]any)
-	if subMap == nil {
-		return nil, fmt.Errorf("RemoteConfig.Nacos 节点未配置")
-	}
-
-	addrs := splitAndTrim(getString(subMap, "ServerAddrs"))
-	if len(addrs) == 0 {
-		return nil, fmt.Errorf("RemoteConfig.Nacos.ServerAddrs 必填")
-	}
-	dataId := getString(subMap, "DataId")
-	if dataId == "" {
-		return nil, fmt.Errorf("RemoteConfig.Nacos.DataId 必填")
-	}
-
-	timeoutMs := uint64(toInt64(subMap["TimeoutMs"], 5000))
-
-	cli, err := nacos.NewClient(nacos.Config{
-		ServerAddrs: addrs,
-		Namespace:   getString(subMap, "Namespace"),
-		Group:       getString(subMap, "Group"),
-		DataId:      dataId,
-		Username:    getString(subMap, "Username"),
-		Password:    getString(subMap, "Password"),
-		Format:      getString(subMap, "Format"),
-		TimeoutMs:   timeoutMs,
-		LogDir:      getString(subMap, "LogDir"),
-		CacheDir:    getString(subMap, "CacheDir"),
-	})
+	cli, err := nacos.NewClientWithSchema("RemoteConfig.Nacos")
 	if err != nil {
 		return nil, err
 	}
-
 	opt := BaseOption{
-		CacheTTL:      time.Duration(toInt64(subMap["CacheTTL"], 0)) * time.Second,
-		WatchInterval: time.Duration(toInt64(subMap["WatchInterval"], 0)) * time.Second,
+		CacheTTL:      time.Duration(gaia.GetSafeConfInt64("RemoteConfig.Nacos.CacheTTL")) * time.Second,
+		WatchInterval: time.Duration(gaia.GetSafeConfInt64("RemoteConfig.Nacos.WatchInterval")) * time.Second,
 	}
 	return NewNacosConfigCenter(cli, opt)
 }

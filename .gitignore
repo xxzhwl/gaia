@@ -2,6 +2,6 @@
 config.yml
 .env
 .claude/
-*CHANGELOG*.md
 .DS_Store
 .trae/
+docs/

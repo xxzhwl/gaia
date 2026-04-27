@@ -30,7 +30,6 @@ import (
 
 	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/components/etcd"
-	"github.com/xxzhwl/gaia/dic"
 )
 
 func init() {
@@ -62,36 +61,13 @@ func NewEtcdConfigCenter(cli *etcd.Client, opt BaseOption) (*EtcdConfigCenter, e
 
 // newEtcdProvider 工厂函数
 func newEtcdProvider(cfg map[string]any) (ConfigCenter, error) {
-	sub, _ := dic.GetValueByMapPath(cfg, "Etcd")
-	subMap, _ := sub.(map[string]any)
-	if subMap == nil {
-		return nil, fmt.Errorf("RemoteConfig.Etcd 节点未配置")
-	}
-
-	eps := splitAndTrim(getString(subMap, "Endpoints"))
-	if len(eps) == 0 {
-		return nil, fmt.Errorf("RemoteConfig.Etcd.Endpoints 必填")
-	}
-	prefix := getString(subMap, "Prefix")
-	if prefix == "" {
-		return nil, fmt.Errorf("RemoteConfig.Etcd.Prefix 必填")
-	}
-
-	cli, err := etcd.NewClient(etcd.Config{
-		Endpoints:      eps,
-		Prefix:         prefix,
-		Username:       getString(subMap, "Username"),
-		Password:       getString(subMap, "Password"),
-		DialTimeout:    time.Duration(toInt64(subMap["DialTimeout"], 0)) * time.Second,
-		RequestTimeout: time.Duration(toInt64(subMap["RequestTimeout"], 0)) * time.Second,
-	})
+	cli, err := etcd.NewClientWithSchema("RemoteConfig.Etcd")
 	if err != nil {
 		return nil, err
 	}
-
 	opt := BaseOption{
-		CacheTTL:      time.Duration(toInt64(subMap["CacheTTL"], 0)) * time.Second,
-		WatchInterval: time.Duration(toInt64(subMap["WatchInterval"], 0)) * time.Second,
+		CacheTTL:      time.Duration(gaia.GetSafeConfInt64("RemoteConfig.Etcd.CacheTTL")) * time.Second,
+		WatchInterval: time.Duration(gaia.GetSafeConfInt64("RemoteConfig.Etcd.WatchInterval")) * time.Second,
 	}
 	return NewEtcdConfigCenter(cli, opt)
 }

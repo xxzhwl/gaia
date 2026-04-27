@@ -4,5 +4,10 @@
 package init
 
 import (
+	"github.com/xxzhwl/gaia/framework"
 	_ "github.com/xxzhwl/gaia/valueHandler"
 )
+
+func init() {
+	framework.Init()
+}

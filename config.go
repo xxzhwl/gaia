@@ -36,7 +36,30 @@ const (
 	localConfCacheTime           = time.Second * 30
 	defaultConfCacheTime         = time.Second * 5
 	defaultRemoteConfTimeoutTime = time.Millisecond * 200
+	envRemoteConfTimeoutMs       = "GAIA_REMOTE_CONF_TIMEOUT_MS"
+	localRemoteConfTimeoutKey    = "RemoteConfig.RemoteTimeoutMs"
 )
+
+// getRemoteConfTimeout 读取远程配置超时时间。
+// 优先级：环境变量 GAIA_REMOTE_CONF_TIMEOUT_MS > 本地配置文件 RemoteConfig.RemoteTimeoutMs > 默认 200ms
+// 直接从本地文件读取而非通过 GetConf，避免递归。
+func getRemoteConfTimeout() time.Duration {
+	if v := os.Getenv(envRemoteConfTimeoutMs); v != "" {
+		var ms int64
+		if _, err := fmt.Sscanf(v, "%d", &ms); err == nil && ms > 0 {
+			return time.Duration(ms) * time.Millisecond
+		}
+	}
+	if val, found, _ := getConfFromLocalFile(DefaultLocalConfigFile, localRemoteConfTimeoutKey); found {
+		switch n := val.(type) {
+		case float64:
+			if n > 0 {
+				return time.Duration(n) * time.Millisecond
+			}
+		}
+	}
+	return defaultRemoteConfTimeoutTime
+}
 
 // GetConfFromRemote 需要依赖外部实现
 var GetConfFromRemote func(key string) (any, bool, error)
@@ -165,7 +188,7 @@ func GetConf(key string) (any, error) {
 		}
 
 		TraceF("3.获取远程配置")
-		ctx, cancel := context.WithTimeout(context.Background(), defaultRemoteConfTimeoutTime)
+		ctx, cancel := context.WithTimeout(context.Background(), getRemoteConfTimeout())
 		defer cancel()
 		remoteConf, existed, err := GetConfFromRemoteConfCenter(ctx, key)
 		if existed {

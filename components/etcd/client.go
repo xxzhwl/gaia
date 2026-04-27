@@ -29,6 +29,8 @@ import (
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
+
+	"github.com/xxzhwl/gaia"
 )
 
 // Config etcd 客户端配置
@@ -85,6 +87,23 @@ func NewClient(cfg Config) (*Client, error) {
 		cli:      cli,
 		watchers: map[string]context.CancelFunc{},
 	}, nil
+}
+
+// NewClientWithSchema 从 gaia 配置中读取
+func NewClientWithSchema(schema string) (*Client, error) {
+	return NewClient(Config{
+		Endpoints:      gaia.GetSafeConfStringSliceFromString(schema + ".Endpoints"),
+		Prefix:         gaia.GetSafeConfString(schema + ".Prefix"),
+		Username:       gaia.GetSafeConfString(schema + ".Username"),
+		Password:       gaia.GetSafeConfString(schema + ".Password"),
+		DialTimeout:    time.Duration(gaia.GetSafeConfInt64(schema + ".DialTimeoutMs")) * time.Millisecond,
+		RequestTimeout: time.Duration(gaia.GetSafeConfInt64(schema + ".RequestTimeoutMs")) * time.Millisecond,
+	})
+}
+
+// NewFrameworkClient 使用 RemoteConfig.Etcd 配置
+func NewFrameworkClient() (*Client, error) {
+	return NewClientWithSchema("RemoteConfig.Etcd")
 }
 
 // GetCli 返回底层 etcd client

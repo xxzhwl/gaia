@@ -30,6 +30,7 @@ import (
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 	"gopkg.in/yaml.v3"
 
+	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/dic"
 )
 
@@ -119,6 +120,27 @@ func NewClient(cfg Config) (*Client, error) {
 	return &Client{cfg: cfg, cli: cli}, nil
 }
 
+// NewClientWithSchema 从 gaia 配置中读取
+func NewClientWithSchema(schema string) (*Client, error) {
+	return NewClient(Config{
+		ServerAddrs: gaia.GetSafeConfStringSliceFromString(schema + ".ServerAddrs"),
+		Namespace:   gaia.GetSafeConfString(schema + ".Namespace"),
+		Group:       gaia.GetSafeConfString(schema + ".Group"),
+		DataId:      gaia.GetSafeConfString(schema + ".DataId"),
+		Username:    gaia.GetSafeConfString(schema + ".Username"),
+		Password:    gaia.GetSafeConfString(schema + ".Password"),
+		TimeoutMs:   uint64(gaia.GetSafeConfInt64(schema + ".TimeoutMs")),
+		Format:      gaia.GetSafeConfString(schema + ".Format"),
+		LogDir:      gaia.GetSafeConfString(schema + ".LogDir"),
+		CacheDir:    gaia.GetSafeConfString(schema + ".CacheDir"),
+	})
+}
+
+// NewFrameworkClient 使用 RemoteConfig.Nacos 配置
+func NewFrameworkClient() (*Client, error) {
+	return NewClientWithSchema("RemoteConfig.Nacos")
+}
+
 // GetCli 返回底层 SDK client（需要调用高级能力时使用）
 func (c *Client) GetCli() config_client.IConfigClient {
 	return c.cli
@@ -133,12 +155,12 @@ func (c *Client) PullRaw() (string, error) {
 }
 
 // PullMap 拉取 DataId 并解析为 map[string]any
-func (c *Client) PullMap() (map[string]any, error) {
+func (c *Client) PullMap() (m map[string]any, err error) {
 	content, err := c.PullRaw()
 	if err != nil {
 		return nil, fmt.Errorf("拉取配置失败: %w", err)
 	}
-	m, err := parseContent(content, c.cfg.Format)
+	m, err = parseContent(content, c.cfg.Format)
 	if err != nil {
 		return nil, err
 	}
@@ -231,4 +253,12 @@ func splitHostPort(addr string) (string, uint64, error) {
 		return "", 0, fmt.Errorf("端口解析失败: %w", err)
 	}
 	return host, port, nil
+}
+
+// truncate 截断字符串，用于错误日志
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
