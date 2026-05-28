@@ -1,0 +1,10 @@
+.idea/
+config.yml
+.env
+.claude/
+.DS_Store
+.trae/
+docs/
+.codegraph/
+.cursor/framework/logImpl/var/
+.cursor/

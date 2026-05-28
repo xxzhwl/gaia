@@ -1,0 +1,195 @@
+syntax = "proto3";
+package jobs.v1;
+option go_package = "github.com/xxzhwl/gaia/components/jobs/pb;jobspb";
+
+import "google/protobuf/timestamp.proto";
+
+service JobAdmin {
+  rpc ListJobs(ListJobsReq) returns (ListJobsResp);
+  rpc GetJob(GetJobReq) returns (JobItem);
+  rpc CreateJob(CreateJobReq) returns (CreateJobResp);
+  rpc UpdateJob(UpdateJobReq) returns (UpdateJobResp);
+  rpc DeleteJob(DeleteJobReq) returns (Empty);
+  rpc ToggleJob(ToggleJobReq) returns (Empty);
+  rpc ExecuteJob(ExecuteJobReq) returns (Empty);
+  rpc ListRecords(ListRecordsReq) returns (ListRecordsResp);
+  rpc GetRunningJobs(Empty) returns (RunningJobsResp);
+  rpc GetStats(Empty) returns (JobStatsResp);
+  rpc GetSchedulerStatus(Empty) returns (SchedulerStatusResp);
+  rpc StartScheduler(Empty) returns (Empty);
+  rpc StopScheduler(Empty) returns (Empty);
+  rpc RegisterService(RegisterServiceReq) returns (Empty);
+  rpc ListServices(ListServicesReq) returns (ListServicesResp);
+  rpc GetHealth(Empty) returns (HealthResp);
+}
+
+message Empty {}
+
+message JobItem {
+  int64 id = 1;
+  string system_name = 2;
+  string job_name = 3;
+  string job_type = 4;
+  string cron_expr = 5;
+  bool enabled = 6;
+  string service_name = 7;
+  string service_method = 8;
+  string args = 9;
+  string hook_url = 10;
+  int32 timeout = 11;
+  string run_status = 12;
+  string lease_owner = 13;
+  google.protobuf.Timestamp created_at = 14;
+  google.protobuf.Timestamp updated_at = 15;
+  google.protobuf.Timestamp last_run_time = 16;
+}
+
+message ListJobsReq {
+  string system_name = 1;
+  string job_type = 2;
+  string job_name = 3;
+  optional bool enabled = 4;
+  int64 page = 5;
+  int64 page_size = 6;
+}
+
+message ListJobsResp {
+  repeated JobItem jobs = 1;
+  int64 total = 2;
+}
+
+message GetJobReq { int64 id = 1; }
+
+message CreateJobReq {
+  string system_name = 1;
+  string job_name = 2;
+  string job_type = 3;
+  string cron_expr = 4;
+  string service_name = 5;
+  string service_method = 6;
+  string args = 7;
+  string hook_url = 8;
+  int32 timeout = 9;
+  bool enabled = 10;
+}
+
+message CreateJobResp { int64 id = 1; }
+
+message UpdateJobReq {
+  int64 id = 1;
+  string system_name = 2;
+  string job_name = 3;
+  string job_type = 4;
+  string cron_expr = 5;
+  string service_name = 6;
+  string service_method = 7;
+  string args = 8;
+  string hook_url = 9;
+  int32 timeout = 10;
+  bool enabled = 11;
+}
+
+message UpdateJobResp { int64 affected = 1; }
+
+message DeleteJobReq { int64 id = 1; }
+message ToggleJobReq {
+  int64 id = 1;
+  optional bool enabled = 2;
+}
+message ExecuteJobReq { int64 id = 1; }
+
+message JobRecordItem {
+  int64 id = 1;
+  string system_name = 2;
+  string job_name = 3;
+  string job_type = 4;
+  string service_name = 5;
+  string service_method = 6;
+  string result = 7;
+  string error = 8;
+  string run_result = 9;
+  int64 duration_ms = 10;
+  string instance_id = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+message ListRecordsReq {
+  int64 job_id = 1;
+  string status = 2;
+  int64 page = 3;
+  int64 page_size = 4;
+}
+
+message ListRecordsResp {
+  repeated JobRecordItem records = 1;
+  int64 total = 2;
+}
+
+message RunningJobItem {
+  int64 id = 1;
+  string system_name = 2;
+  string job_name = 3;
+  string job_type = 4;
+  string service_name = 5;
+  string service_method = 6;
+  string run_status = 7;
+  string lease_owner = 8;
+  google.protobuf.Timestamp last_run_time = 9;
+}
+
+message RunningJobsResp {
+  repeated RunningJobItem running = 1;
+}
+
+message JobStatsResp {
+  int64 total = 1;
+  int64 enabled = 2;
+  int64 disabled = 3;
+  int64 running = 4;
+  map<string, int64> by_type = 5;
+}
+
+message SchedulerStatusResp {
+  string instance_id = 1;
+  bool healthy = 2;
+  int32 active_jobs = 3;
+  int64 exec_count = 4;
+  int64 success_count = 5;
+  int64 failed_count = 6;
+  int64 panic_count = 7;
+  int64 skip_count = 8;
+  int64 timeout_count = 9;
+}
+
+message RegisterServiceReq {
+  string system_name = 1;
+  string service_name = 2;
+  repeated string methods = 3;
+}
+
+message ListServicesReq {
+  string system_name = 1;
+}
+
+message ListServicesResp {
+  repeated RegisteredService services = 1;
+}
+
+message RegisteredService {
+  string system_name = 1;
+  string service_name = 2;
+  repeated string methods = 3;
+  bool executable = 4;
+}
+
+message HealthResp {
+  bool healthy = 1;
+  string instance_id = 2;
+  string db_schema = 3;
+  bool ha_disabled = 4;
+  int32 running_job_num = 5;
+  int32 wait_job_num = 6;
+  int32 disabled_job_num = 7;
+  int32 my_owned_job_num = 8;
+}

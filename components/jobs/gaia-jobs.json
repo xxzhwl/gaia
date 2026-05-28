@@ -1,0 +1,273 @@
+{
+  "uid": "gaia-jobs",
+  "title": "Gaia · Jobs (cron / 定时任务)",
+  "description": "通用看板,适配任何接入 framework/metrics 的 gaia jobs 服务。指标命名空间: jobs_*。",
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": { "from": "now-30m", "to": "now" },
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["gaia", "jobs", "cron"],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "text": "Prometheus", "value": "Prometheus" },
+        "hide": 0,
+        "label": "Datasource"
+      },
+      {
+        "name": "service",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(jobs_exec_total, service_name)",
+        "regex": "",
+        "current": { "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2,
+        "label": "service",
+        "sort": 1
+      },
+      {
+        "name": "replica",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(up{component=\"jobs\"}, replica)",
+        "current": { "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2,
+        "label": "replica",
+        "sort": 1
+      },
+      {
+        "name": "job_name",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(jobs_exec_total{service_name=~\"$service\"}, job_name)",
+        "current": { "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2,
+        "label": "job_name",
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "type": "row", "title": "总览", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 10, "type": "stat", "title": "副本在线数",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "count(up{component=\"jobs\", replica=~\"$replica\"} == 1)", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": {
+        "color": { "mode": "thresholds" },
+        "thresholds": { "steps": [
+          { "color": "red", "value": null },
+          { "color": "yellow", "value": 1 },
+          { "color": "green", "value": 2 }
+        ] }
+      } }
+    },
+    {
+      "id": 11, "type": "stat", "title": "执行/分钟",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "sum(rate(jobs_exec_total{service_name=~\"$service\",job_name=~\"$job_name\"}[1m])) * 60", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 1 } }
+    },
+    {
+      "id": 12, "type": "stat", "title": "失败率",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "sum(rate(jobs_exec_total{service_name=~\"$service\",job_name=~\"$job_name\",status=~\"failed|panic|timeout\"}[5m])) / clamp_min(sum(rate(jobs_exec_total{service_name=~\"$service\",job_name=~\"$job_name\"}[5m])), 0.001)", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": {
+        "unit": "percentunit", "decimals": 2,
+        "color": { "mode": "thresholds" },
+        "thresholds": { "steps": [
+          { "color": "green", "value": null },
+          { "color": "yellow", "value": 0.05 },
+          { "color": "red", "value": 0.2 }
+        ] }
+      } }
+    },
+    {
+      "id": 13, "type": "stat", "title": "Skip 次数 (5m)",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "sum(increase(jobs_skip_total{service_name=~\"$service\",job_name=~\"$job_name\"}[5m]))", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } }
+    },
+    {
+      "id": 14, "type": "stat", "title": "Panic 次数 (5m)",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "sum(increase(jobs_panic_total{service_name=~\"$service\",job_name=~\"$job_name\"}[5m]))", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": {
+        "unit": "short", "decimals": 0,
+        "color": { "mode": "thresholds" },
+        "thresholds": { "steps": [
+          { "color": "green", "value": null },
+          { "color": "red", "value": 1 }
+        ] }
+      } }
+    },
+    {
+      "id": 15, "type": "stat", "title": "Timeout 次数 (5m)",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "sum(increase(jobs_timeout_total{service_name=~\"$service\",job_name=~\"$job_name\"}[5m]))", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": {
+        "unit": "short", "decimals": 0,
+        "color": { "mode": "thresholds" },
+        "thresholds": { "steps": [
+          { "color": "green", "value": null },
+          { "color": "orange", "value": 1 }
+        ] }
+      } }
+    },
+
+    {
+      "id": 2, "type": "row", "title": "执行情况", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }
+    },
+    {
+      "id": 20, "type": "timeseries", "title": "执行速率 by 任务 (success)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "sum by (job_name) (rate(jobs_exec_total{service_name=~\"$service\",job_name=~\"$job_name\",status=\"success\"}[1m]))", "refId": "A", "legendFormat": "{{job_name}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] } }
+    },
+    {
+      "id": 21, "type": "timeseries", "title": "失败/超时/Panic 速率 by 状态",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "sum by (status) (rate(jobs_exec_total{service_name=~\"$service\",job_name=~\"$job_name\",status=~\"failed|timeout|panic\"}[1m]))", "refId": "A", "legendFormat": "{{status}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 22, "type": "timeseries", "title": "执行耗时分位数 (ms)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le, job_name) (rate(jobs_exec_duration_milliseconds_bucket{service_name=~\"$service\",job_name=~\"$job_name\"}[5m])))", "refId": "A", "legendFormat": "p50 {{job_name}}" },
+        { "expr": "histogram_quantile(0.95, sum by (le, job_name) (rate(jobs_exec_duration_milliseconds_bucket{service_name=~\"$service\",job_name=~\"$job_name\"}[5m])))", "refId": "B", "legendFormat": "p95 {{job_name}}" },
+        { "expr": "histogram_quantile(0.99, sum by (le, job_name) (rate(jobs_exec_duration_milliseconds_bucket{service_name=~\"$service\",job_name=~\"$job_name\"}[5m])))", "refId": "C", "legendFormat": "p99 {{job_name}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "id": 23, "type": "timeseries", "title": "Skip 速率 by 任务",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "sum by (job_name) (rate(jobs_skip_total{service_name=~\"$service\",job_name=~\"$job_name\"}[1m]))", "refId": "A", "legendFormat": "{{job_name}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+
+    {
+      "id": 3, "type": "row", "title": "高可用 (HA 租约)", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 }
+    },
+    {
+      "id": 30, "type": "timeseries", "title": "抢租成功 by 副本",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "sum by (replica) (rate(jobs_lease_acquired_total{replica=~\"$replica\"}[1m]))", "refId": "A", "legendFormat": "{{replica}} acquired" },
+        { "expr": "sum by (replica) (rate(jobs_lease_missed_total{replica=~\"$replica\"}[1m]))",   "refId": "B", "legendFormat": "{{replica}} missed" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 31, "type": "timeseries", "title": "续租成功/失败",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "sum by (replica) (rate(jobs_lease_renew_total{replica=~\"$replica\"}[1m]))",      "refId": "A", "legendFormat": "{{replica}} renew_ok" },
+        { "expr": "sum by (replica) (rate(jobs_lease_renew_lost_total{replica=~\"$replica\"}[1m]))", "refId": "B", "legendFormat": "{{replica}} renew_lost" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+
+    {
+      "id": 4, "type": "row", "title": "调度 / 资源 / 错误", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 31 }
+    },
+    {
+      "id": 40, "type": "timeseries", "title": "updateJobs 扫描耗时 p99 (ms)",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 32 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "histogram_quantile(0.99, sum by (le, replica) (rate(jobs_update_scan_duration_milliseconds_bucket{replica=~\"$replica\"}[5m])))", "refId": "A", "legendFormat": "{{replica}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "id": 41, "type": "timeseries", "title": "已加载任务数 (gauge)",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 32 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "sum by (replica) (jobs_loaded_service{replica=~\"$replica\"})", "refId": "A", "legendFormat": "{{replica}} service" },
+        { "expr": "sum by (replica) (jobs_loaded_hook{replica=~\"$replica\"})",    "refId": "B", "legendFormat": "{{replica}} hook" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 42, "type": "timeseries", "title": "DB 错误 / 告警",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 32 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "sum(rate(jobs_db_error_total[1m]))",          "refId": "A", "legendFormat": "db_error" },
+        { "expr": "sum(rate(jobs_alarm_fired_total[1m]))",       "refId": "B", "legendFormat": "alarm_fired" },
+        { "expr": "sum(rate(jobs_alarm_suppressed_total[1m]))",  "refId": "C", "legendFormat": "alarm_suppressed" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+
+    {
+      "id": 5, "type": "row", "title": "明细表", "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 39 },
+      "panels": []
+    },
+    {
+      "id": 50, "type": "table", "title": "各任务最近 30m 累计 (按 status)",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 40 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "sum by (job_name, status) (increase(jobs_exec_total{service_name=~\"$service\",job_name=~\"$job_name\"}[30m]))", "refId": "A", "instant": true, "format": "table" }
+      ],
+      "transformations": [
+        { "id": "organize", "options": {
+          "excludeByName": { "Time": true, "__name__": true },
+          "renameByName": { "Value": "count_30m" }
+        } }
+      ]
+    }
+  ]
+}

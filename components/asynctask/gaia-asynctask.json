@@ -1,0 +1,202 @@
+{
+  "uid": "gaia-asynctask",
+  "title": "Gaia · AsyncTask (异步任务)",
+  "description": "通用看板,适配任何接入 framework/metrics 的 gaia asynctask 服务。指标命名空间: asynctask_*。",
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": { "from": "now-30m", "to": "now" },
+  "schemaVersion": 39,
+  "version": 2,
+  "tags": ["gaia", "asynctask"],
+  "templating": {
+    "list": [
+      { "name": "datasource", "type": "datasource", "query": "prometheus",
+        "current": { "text": "Prometheus", "value": "Prometheus" }, "label": "Datasource" },
+      { "name": "replica", "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(asynctask_queue_capacity{component=\"asynctask\"}, replica)",
+        "current": { "text": "All", "value": "$__all" },
+        "includeAll": true, "multi": true, "refresh": 2, "label": "replica", "sort": 1 },
+      { "name": "theme", "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(asynctask_exec_total, theme)",
+        "current": { "text": "All", "value": "$__all" },
+        "includeAll": true, "multi": true, "refresh": 2, "label": "theme", "sort": 1 }
+    ]
+  },
+  "panels": [
+    { "id": 1, "type": "row", "title": "总览", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 } },
+
+    { "id": 10, "type": "stat", "title": "副本在线数",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "expr": "count(asynctask_queue_capacity{component=\"asynctask\", replica=~\"$replica\",theme=~\"$theme\"})", "refId": "A" } ],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" },
+        "thresholds": { "steps": [
+          { "color": "red", "value": null },
+          { "color": "yellow", "value": 1 },
+          { "color": "green", "value": 2 } ] } } } },
+
+    { "id": 11, "type": "stat", "title": "执行/分钟",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "expr": "sum(rate(asynctask_exec_total{theme=~\"$theme\"}[1m])) * 60", "refId": "A" } ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 1 } } },
+
+    { "id": 12, "type": "stat", "title": "失败率",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "expr": "sum(rate(asynctask_exec_total{theme=~\"$theme\",status=~\"Failed|Retry|Panic|panic|failed\"}[5m])) / clamp_min(sum(rate(asynctask_exec_total{theme=~\"$theme\"}[5m])), 0.001)", "refId": "A" } ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 2,
+        "color": { "mode": "thresholds" },
+        "thresholds": { "steps": [
+          { "color": "green", "value": null },
+          { "color": "yellow", "value": 0.05 },
+          { "color": "red", "value": 0.2 } ] } } } },
+
+    { "id": 13, "type": "stat", "title": "Retry 次数 (5m)",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "expr": "sum(increase(asynctask_retry_total{theme=~\"$theme\"}[5m]))", "refId": "A" } ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } } },
+
+    { "id": 14, "type": "stat", "title": "Panic 次数 (5m)",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "expr": "sum(increase(asynctask_panic_total{theme=~\"$theme\"}[5m]))", "refId": "A" } ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0,
+        "color": { "mode": "thresholds" },
+        "thresholds": { "steps": [
+          { "color": "green", "value": null },
+          { "color": "red", "value": 1 } ] } } } },
+
+    { "id": 15, "type": "stat", "title": "Queue Drop 次数 (5m)",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "expr": "sum(increase(asynctask_queue_drop_total{theme=~\"$theme\"}[5m]))", "refId": "A" } ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0,
+        "color": { "mode": "thresholds" },
+        "thresholds": { "steps": [
+          { "color": "green", "value": null },
+          { "color": "orange", "value": 1 } ] } } } },
+
+    { "id": 2, "type": "row", "title": "执行情况", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 } },
+
+    { "id": 20, "type": "timeseries", "title": "执行速率 by status",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "expr": "sum by (status) (rate(asynctask_exec_total{theme=~\"$theme\"}[1m]))", "refId": "A", "legendFormat": "{{status}}" } ],
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] } } },
+
+    { "id": 21, "type": "timeseries", "title": "执行速率 by replica",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "expr": "sum by (replica, status) (rate(asynctask_exec_total{theme=~\"$theme\",replica=~\"$replica\"}[1m]))", "refId": "A", "legendFormat": "{{replica}}/{{status}}" } ],
+      "fieldConfig": { "defaults": { "unit": "ops" } } },
+
+    { "id": 22, "type": "timeseries", "title": "执行耗时分位数 (ms) by replica",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le, replica) (rate(asynctask_exec_duration_milliseconds_bucket{theme=~\"$theme\",replica=~\"$replica\"}[5m])))", "refId": "A", "legendFormat": "p50 {{replica}}" },
+        { "expr": "histogram_quantile(0.95, sum by (le, replica) (rate(asynctask_exec_duration_milliseconds_bucket{theme=~\"$theme\",replica=~\"$replica\"}[5m])))", "refId": "B", "legendFormat": "p95 {{replica}}" },
+        { "expr": "histogram_quantile(0.99, sum by (le, replica) (rate(asynctask_exec_duration_milliseconds_bucket{theme=~\"$theme\",replica=~\"$replica\"}[5m])))", "refId": "C", "legendFormat": "p99 {{replica}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } } },
+
+    { "id": 23, "type": "timeseries", "title": "首次执行等待时延 (ms)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le) (rate(asynctask_wait_duration_milliseconds_bucket{theme=~\"$theme\"}[5m])))", "refId": "A", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(asynctask_wait_duration_milliseconds_bucket{theme=~\"$theme\"}[5m])))", "refId": "B", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum by (le) (rate(asynctask_wait_duration_milliseconds_bucket{theme=~\"$theme\"}[5m])))", "refId": "C", "legendFormat": "p99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } } },
+
+    { "id": 3, "type": "row", "title": "队列 / Worker", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 } },
+
+    { "id": 30, "type": "timeseries", "title": "队列深度 / 容量 by 副本",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "sum by (replica, theme) (asynctask_queue_depth{replica=~\"$replica\",theme=~\"$theme\"})",    "refId": "A", "legendFormat": "{{replica}}/{{theme}} depth" },
+        { "expr": "sum by (replica, theme) (asynctask_queue_capacity{replica=~\"$replica\",theme=~\"$theme\"})", "refId": "B", "legendFormat": "{{replica}}/{{theme}} capacity" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } } },
+
+    { "id": 31, "type": "timeseries", "title": "队列利用率 (%)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "100 * asynctask_queue_depth{replica=~\"$replica\",theme=~\"$theme\"} / clamp_min(asynctask_queue_capacity{replica=~\"$replica\",theme=~\"$theme\"}, 1)", "refId": "A", "legendFormat": "{{replica}}/{{theme}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent",
+        "color": { "mode": "thresholds" },
+        "thresholds": { "steps": [
+          { "color": "green", "value": null },
+          { "color": "yellow", "value": 60 },
+          { "color": "red", "value": 90 } ] } } } },
+
+    { "id": 32, "type": "timeseries", "title": "排队等待时延 (ms)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 31 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le, theme) (rate(asynctask_queue_wait_milliseconds_bucket{theme=~\"$theme\"}[5m])))", "refId": "A", "legendFormat": "p50 {{theme}}" },
+        { "expr": "histogram_quantile(0.95, sum by (le, theme) (rate(asynctask_queue_wait_milliseconds_bucket{theme=~\"$theme\"}[5m])))", "refId": "B", "legendFormat": "p95 {{theme}}" },
+        { "expr": "histogram_quantile(0.99, sum by (le, theme) (rate(asynctask_queue_wait_milliseconds_bucket{theme=~\"$theme\"}[5m])))", "refId": "C", "legendFormat": "p99 {{theme}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } } },
+
+    { "id": 33, "type": "timeseries", "title": "Worker 总数 / 运行中 / 扩缩",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 31 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "sum by (replica) (asynctask_worker_total{replica=~\"$replica\",theme=~\"$theme\"})",   "refId": "A", "legendFormat": "{{replica}} total" },
+        { "expr": "sum by (replica) (asynctask_worker_running{replica=~\"$replica\",theme=~\"$theme\"})", "refId": "B", "legendFormat": "{{replica}} running" },
+        { "expr": "sum(rate(asynctask_worker_scale_up_total{theme=~\"$theme\"}[1m]))",   "refId": "C", "legendFormat": "scale_up rate" },
+        { "expr": "sum(rate(asynctask_worker_scale_down_total{theme=~\"$theme\"}[1m]))", "refId": "D", "legendFormat": "scale_down rate" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } } },
+
+    { "id": 4, "type": "row", "title": "心跳 / DB / 告警 / 扫描", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 39 } },
+
+    { "id": 40, "type": "timeseries", "title": "Heartbeat 死亡回收速率",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 40 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "expr": "sum by (theme) (rate(asynctask_heartbeat_dead_total{theme=~\"$theme\"}[1m]))", "refId": "A", "legendFormat": "{{theme}}" } ],
+      "fieldConfig": { "defaults": { "unit": "ops" } } },
+
+    { "id": 41, "type": "timeseries", "title": "DB 错误 / 告警",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 40 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "sum(rate(asynctask_db_error_total{theme=~\"$theme\"}[1m]))",          "refId": "A", "legendFormat": "db_error" },
+        { "expr": "sum(rate(asynctask_alarm_fired_total{theme=~\"$theme\"}[1m]))",       "refId": "B", "legendFormat": "alarm_fired" },
+        { "expr": "sum(rate(asynctask_alarm_suppressed_total{theme=~\"$theme\"}[1m]))",  "refId": "C", "legendFormat": "alarm_suppressed" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } } },
+
+    { "id": 42, "type": "timeseries", "title": "DB Scan 耗时 p99 (ms)",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 40 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "expr": "histogram_quantile(0.99, sum by (le, replica) (rate(asynctask_scan_duration_milliseconds_bucket{replica=~\"$replica\",theme=~\"$theme\"}[5m])))", "refId": "A", "legendFormat": "{{replica}}" } ],
+      "fieldConfig": { "defaults": { "unit": "ms" } } },
+
+    { "id": 5, "type": "row", "title": "明细表 (按 status × replica × theme)", "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 47 }, "panels": [] },
+
+    { "id": 50, "type": "table", "title": "最近 30m 累计 (replica × status)",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 48 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [ { "expr": "sum by (replica, theme, status) (increase(asynctask_exec_total{theme=~\"$theme\"}[30m]))", "refId": "A", "instant": true, "format": "table" } ],
+      "transformations": [ { "id": "organize", "options": {
+        "excludeByName": { "Time": true, "__name__": true },
+        "renameByName": { "Value": "count_30m" } } } ] }
+  ]
+}
