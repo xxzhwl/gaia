@@ -156,17 +156,29 @@ func mdToHeader(ctx context.Context) http.Header {
 
 // sanitizeRpcPayload 序列化并按配置脱敏 / 截断 gRPC 消息体。
 func sanitizeRpcPayload(opts loggerOptions, msg any) string {
+	return sanitizeRpcPayloadString(opts, serializeRpcPayload(msg))
+}
+
+func sanitizeRpcPayloadForRemote(opts loggerOptions, msg any) string {
+	return logImpl.RemoteLogBodyFromString(opts.logBody, opts.maxBodyLogBytes, serializeRpcPayload(msg))
+}
+
+func serializeRpcPayload(msg any) string {
 	if msg == nil {
+		return ""
+	}
+	if b, err := json.Marshal(msg); err == nil {
+		return string(b)
+	}
+	return fmt.Sprintf("%+v", msg)
+}
+
+func sanitizeRpcPayloadString(opts loggerOptions, s string) string {
+	if s == "" {
 		return ""
 	}
 	if !opts.logBody {
 		return "[REDACTED]"
-	}
-	var s string
-	if b, err := json.Marshal(msg); err == nil {
-		s = string(b)
-	} else {
-		s = fmt.Sprintf("%+v", msg)
 	}
 	if int64(len(s)) > opts.maxBodyLogBytes {
 		return fmt.Sprintf("%s...[truncated %d bytes]", s[:opts.maxBodyLogBytes], int64(len(s))-opts.maxBodyLogBytes)
@@ -183,9 +195,14 @@ func writeGrpcLog(opts loggerOptions, ctx context.Context, fullMethod, kind, pee
 	dura := end.Sub(start)
 
 	var reqStr, respStr string
-	if opts.detailMode || opts.enablePushLog {
+	if opts.detailMode {
 		reqStr = sanitizeRpcPayload(opts, req)
 		respStr = sanitizeRpcPayload(opts, resp)
+	}
+	remoteReqStr, remoteRespStr := reqStr, respStr
+	if opts.enablePushLog {
+		remoteReqStr = sanitizeRpcPayloadForRemote(opts, req)
+		remoteRespStr = sanitizeRpcPayloadForRemote(opts, resp)
 	}
 
 	var content string
@@ -215,8 +232,8 @@ func writeGrpcLog(opts loggerOptions, ctx context.Context, fullMethod, kind, pee
 			Peer:           peerAddr,
 			Code:           code.String(),
 			Metadata:       mdToHeader(ctx),
-			ReqBody:        reqStr,
-			RespBody:       respStr,
+			ReqBody:        remoteReqStr,
+			RespBody:       remoteRespStr,
 			StartTime:      start.Format(gaia.DateTimeMillsFormat),
 			EndTime:        end.Format(gaia.DateTimeMillsFormat),
 			StartTimeStamp: start.UnixMilli(),

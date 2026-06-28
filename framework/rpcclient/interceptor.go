@@ -156,8 +156,8 @@ func writeGrpcClientLog(opts loggerOptions, ctx context.Context, method, target 
 
 	var reqStr, respStr string
 	if opts.enablePushLog {
-		reqStr = sanitizeRpcPayload(opts, req)
-		respStr = sanitizeRpcPayload(opts, resp)
+		reqStr = sanitizeRpcPayloadForRemote(opts, req)
+		respStr = sanitizeRpcPayloadForRemote(opts, resp)
 	}
 
 	content := fmt.Sprintf("[gRPC-Client] [%s ~ %s] | %s | %13v | %s | %s",
@@ -225,17 +225,29 @@ func skipPushLog(ctx context.Context) bool {
 }
 
 func sanitizeRpcPayload(opts loggerOptions, msg any) string {
+	return sanitizeRpcPayloadString(opts, serializeRpcPayload(msg))
+}
+
+func sanitizeRpcPayloadForRemote(opts loggerOptions, msg any) string {
+	return logImpl.RemoteLogBodyFromString(opts.logBody, opts.maxBodyLogBytes, serializeRpcPayload(msg))
+}
+
+func serializeRpcPayload(msg any) string {
 	if msg == nil {
+		return ""
+	}
+	if b, err := json.Marshal(msg); err == nil {
+		return string(b)
+	}
+	return fmt.Sprintf("%+v", msg)
+}
+
+func sanitizeRpcPayloadString(opts loggerOptions, s string) string {
+	if s == "" {
 		return ""
 	}
 	if !opts.logBody {
 		return "[REDACTED]"
-	}
-	var s string
-	if b, err := json.Marshal(msg); err == nil {
-		s = string(b)
-	} else {
-		s = fmt.Sprintf("%+v", msg)
 	}
 	if int64(len(s)) > opts.maxBodyLogBytes {
 		return fmt.Sprintf("%s...[truncated %d bytes]", s[:opts.maxBodyLogBytes], int64(len(s))-opts.maxBodyLogBytes)

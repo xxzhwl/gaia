@@ -198,13 +198,17 @@ func (s *Server) defaultServerLogger() app.HandlerFunc {
 					respHeader[string(key)] = []string{string(value)}
 				})
 
+				reqBody := body
+				if !isMultipart && !ctx.GetBool(BanLoggerKey) {
+					reqBody = logImpl.RemoteLogBodyFromBytes(cfg.logBody, cfg.maxBodyLogBytes, ctx.Request.Body())
+				}
 				logBody := logImpl.HttpLogModel{
 					Url:            path,
 					HttpMethod:     method,
 					ReqHeader:      logImpl.SanitizeHttpHeaders(reqHeader),
-					ReqBody:        body,
+					ReqBody:        reqBody,
 					RespHeader:     logImpl.SanitizeHttpHeaders(respHeader),
-					RespBody:       sanitizeServerBodyWithCfg(cfg, ctx.Response.BodyBytes()),
+					RespBody:       logImpl.RemoteLogBodyFromBytes(cfg.logBody, cfg.maxBodyLogBytes, ctx.Response.BodyBytes()),
 					StartTime:      startTime.Format(gaia.DateTimeMillsFormat),
 					EndTime:        endTime.Format(gaia.DateTimeMillsFormat),
 					StartTimeStamp: startTime.UnixMilli(),

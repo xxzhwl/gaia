@@ -512,18 +512,5 @@ func sanitizeHeaders(headers http.Header) http.Header {
 }
 
 func sanitizeBodyForLog(body []byte) string {
-	if len(body) == 0 {
-		return ""
-	}
-
-	if !gaia.GetSafeConfBool("HttpClient.LogBody") {
-		return fmt.Sprintf("[REDACTED len=%d]", len(body))
-	}
-
-	const maxLogBodyLength = 4096
-	if len(body) <= maxLogBodyLength {
-		return string(body)
-	}
-
-	return fmt.Sprintf("%s...[truncated %d bytes]", string(body[:maxLogBodyLength]), len(body)-maxLogBodyLength)
+	return logImpl.RemoteLogBodyFromBytes(gaia.GetSafeConfBool("HttpClient.LogBody"), 4096, body)
 }

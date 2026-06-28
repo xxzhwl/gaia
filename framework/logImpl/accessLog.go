@@ -23,25 +23,35 @@ type AccessLogModel struct {
 
 // AccessLogBaseModel stores protocol-neutral access fields plus optional protocol details.
 type AccessLogBaseModel struct {
-	Direction      string               `json:"direction"`
-	Protocol       string               `json:"protocol"`
-	Operation      string               `json:"operation"`
-	Peer           string               `json:"peer,omitempty"`
-	Status         string               `json:"status"`
-	StatusCode     int                  `json:"status_code"`
-	Success        bool                 `json:"success"`
-	ReqHeader      http.Header          `json:"req_header,omitempty"`
-	ReqBody        string               `json:"req_body,omitempty"`
-	RespHeader     http.Header          `json:"resp_header,omitempty"`
-	RespBody       string               `json:"resp_body,omitempty"`
-	StartTime      string               `json:"start_time"`
-	EndTime        string               `json:"end_time"`
-	StartTimeStamp int64                `json:"start_time_stamp"`
-	EndTimeStamp   int64                `json:"end_time_stamp"`
-	Duration       float64              `json:"duration"`
-	Err            string               `json:"err,omitempty"`
-	HTTP           *HttpAccessLogFields `json:"http,omitempty"`
-	GRPC           *GrpcAccessLogFields `json:"grpc,omitempty"`
+	Direction            string               `json:"direction"`
+	Protocol             string               `json:"protocol"`
+	Operation            string               `json:"operation"`
+	Peer                 string               `json:"peer,omitempty"`
+	Status               string               `json:"status"`
+	StatusCode           int                  `json:"status_code"`
+	Success              bool                 `json:"success"`
+	ReqHeader            http.Header          `json:"req_header,omitempty"`
+	ReqBody              string               `json:"req_body,omitempty"`
+	ReqBodyObjectKey     string               `json:"req_body_object_key,omitempty"`
+	ReqBodyObjectURL     string               `json:"req_body_object_url,omitempty"`
+	ReqBodyObjectSize    int64                `json:"req_body_object_size,omitempty"`
+	ReqBodyObjectSHA256  string               `json:"req_body_object_sha256,omitempty"`
+	ReqBodyOffloaded     bool                 `json:"req_body_offloaded,omitempty"`
+	RespHeader           http.Header          `json:"resp_header,omitempty"`
+	RespBody             string               `json:"resp_body,omitempty"`
+	RespBodyObjectKey    string               `json:"resp_body_object_key,omitempty"`
+	RespBodyObjectURL    string               `json:"resp_body_object_url,omitempty"`
+	RespBodyObjectSize   int64                `json:"resp_body_object_size,omitempty"`
+	RespBodyObjectSHA256 string               `json:"resp_body_object_sha256,omitempty"`
+	RespBodyOffloaded    bool                 `json:"resp_body_offloaded,omitempty"`
+	StartTime            string               `json:"start_time"`
+	EndTime              string               `json:"end_time"`
+	StartTimeStamp       int64                `json:"start_time_stamp"`
+	EndTimeStamp         int64                `json:"end_time_stamp"`
+	Duration             float64              `json:"duration"`
+	Err                  string               `json:"err,omitempty"`
+	HTTP                 *HttpAccessLogFields `json:"http,omitempty"`
+	GRPC                 *GrpcAccessLogFields `json:"grpc,omitempty"`
 }
 
 type HttpAccessLogFields struct {

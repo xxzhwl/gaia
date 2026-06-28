@@ -95,18 +95,23 @@ const (
 )
 
 type LogModel struct {
-	LogId        string `json:"log_id"`
-	TraceId      string `json:"trace_id"`
-	PId          string `json:"p_id"`
-	GoId         string `json:"go_id"`
-	SystemName   string `json:"system_name"`
-	LogType      string `json:"log_type"`
-	LogTitle     string `json:"log_title"`
-	LogLevel     string `json:"log_level"`
-	Content      string `json:"content"`
-	LogTime      string `json:"log_time"`
-	LogTimeStamp int64  `json:"log_time_stamp"`
-	TraceStack   string `json:"trace_stack,omitempty"`
+	LogId               string `json:"log_id"`
+	TraceId             string `json:"trace_id"`
+	PId                 string `json:"p_id"`
+	GoId                string `json:"go_id"`
+	SystemName          string `json:"system_name"`
+	LogType             string `json:"log_type"`
+	LogTitle            string `json:"log_title"`
+	LogLevel            string `json:"log_level"`
+	Content             string `json:"content"`
+	ContentObjectKey    string `json:"content_object_key,omitempty"`
+	ContentObjectURL    string `json:"content_object_url,omitempty"`
+	ContentObjectSize   int64  `json:"content_object_size,omitempty"`
+	ContentObjectSHA256 string `json:"content_object_sha256,omitempty"`
+	ContentOffloaded    bool   `json:"content_offloaded,omitempty"`
+	LogTime             string `json:"log_time"`
+	LogTimeStamp        int64  `json:"log_time_stamp"`
+	TraceStack          string `json:"trace_stack,omitempty"`
 }
 
 type HttpLogModel struct {
@@ -785,6 +790,7 @@ func (d *DefaultLogger) buildRemoteLogDoc(arg createRemoteLogDocArg) remoteLogDo
 
 	switch arg.logType {
 	case gaia.LogSysType:
+		doc.docBody = offloadLargeRemoteLogFields(doc.logType, doc.docBody)
 		return doc
 	case gaia.LogInType:
 		doc.logIndex = InLogIndex
@@ -843,6 +849,7 @@ func (d *DefaultLogger) buildRemoteLogDoc(arg createRemoteLogDocArg) remoteLogDo
 			}
 		}
 	}
+	doc.docBody = offloadLargeRemoteLogFields(doc.logType, doc.docBody)
 	return doc
 }
 

@@ -310,6 +310,14 @@
 | `Logger.DisableLocalFile` | bool | false | 关闭本地文件日志 |
 | `Logger.DisableRemote` | bool | false | 关闭远程日志（ES / Kafka） |
 | `Logger.RemoteWatchInterval` | int64 (秒) | 10 | 框架后台拉取远程日志（如 ES）的间隔 |
+| `Logger.BodyOffload.Enabled` | bool | false | 远程日志大字段转存对象存储；仅影响上报 ES 的 `content` / `req_body` / `resp_body` |
+| `Logger.BodyOffload.Provider` | string | auto | 对象存储提供方：`auto` / `cos` / `oss` / `s3`；auto 按 `Framework.Cos`、`Framework.OSS`、`Framework.S3` 尝试 |
+| `Logger.BodyOffload.ThresholdBytes` | int64 | 4096 | 字段超过该字节数时上传对象存储；失败自动回退截断 |
+| `Logger.BodyOffload.Prefix` | string | gaia/logs/offload | 对象 key 前缀 |
+| `Logger.BodyOffload.SignURLExpireSec` | int64 (秒) | 86400 | ES 元数据中预签名下载 URL 的有效期 |
+| `Logger.BodyOffload.UploadTimeoutSec` | int64 (秒) | 5 | 单字段上传对象存储超时 |
+
+开启 `Logger.BodyOffload.Enabled` 后，远程日志文档仍保持 `content` / `req_body` / `resp_body` 为 string；超限字段会变成短占位文本，并额外写入 `*_object_key`、`*_object_url`、`*_object_size`、`*_object_sha256`、`*_offloaded`。若对象存储未配置或上传失败，框架会在进入 ES 前按阈值截断，避免大文档打爆 ES。
 
 ### 6.2 ES（远程日志后端 / 业务直连）
 
@@ -813,6 +821,13 @@ Logger:
   DisableLocalFile: false
   DisableRemote: false
   RemoteWatchInterval: 10
+  BodyOffload:
+    Enabled: false
+    Provider: auto
+    ThresholdBytes: 4096
+    Prefix: gaia/logs/offload
+    SignURLExpireSec: 86400
+    UploadTimeoutSec: 5
 
 # ===== 通知 =====
 Message:
@@ -1166,7 +1181,15 @@ MqttBiz:
   "Logger": {
     "DisableLocalFile": false,
     "DisableRemote": false,
-    "RemoteWatchInterval": 10
+    "RemoteWatchInterval": 10,
+    "BodyOffload": {
+      "Enabled": false,
+      "Provider": "auto",
+      "ThresholdBytes": 4096,
+      "Prefix": "gaia/logs/offload",
+      "SignURLExpireSec": 86400,
+      "UploadTimeoutSec": 5
+    }
   },
 
   "Message": {

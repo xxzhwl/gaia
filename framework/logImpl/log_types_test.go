@@ -9,11 +9,14 @@
 package logImpl
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/xxzhwl/gaia"
+	"github.com/xxzhwl/gaia/components/storage"
 )
 
 func TestLogType_StringNewTypes(t *testing.T) {
@@ -250,4 +253,187 @@ func TestAccessLogRemoteRouting_UsesDirectionIndexes(t *testing.T) {
 	if outBody.Direction != AccessDirectionOutbound || outBody.Protocol != AccessProtocolGRPC || outBody.Operation != "/demo.UserService/Get" {
 		t.Fatalf("bad outbound access fields: %+v", outBody.AccessLogBaseModel)
 	}
+}
+
+func TestRemoteLogBodyFromBytes_TruncatesWhenOffloadDisabled(t *testing.T) {
+	setBodyOffloadTestConfig(t, map[string]string{
+		"Logger.BodyOffload.Enabled": "false",
+	})
+
+	got := RemoteLogBodyFromBytes(true, 4, []byte("abcdef"))
+	if got != "abcd...[truncated 2 bytes]" {
+		t.Fatalf("remote body = %q", got)
+	}
+}
+
+func TestBuildRemoteLogDoc_OffloadsLargeContentAndBodies(t *testing.T) {
+	mem := &memoryObjectStore{data: map[string][]byte{}}
+	oldBuilder := newBodyOffloadStore
+	newBodyOffloadStore = func(provider string) (storage.ObjectStore, error) {
+		if provider != "memory" {
+			t.Fatalf("provider = %q, want memory", provider)
+		}
+		return mem, nil
+	}
+	t.Cleanup(func() {
+		newBodyOffloadStore = oldBuilder
+		resetBodyOffloadStoreForTest()
+	})
+	setBodyOffloadTestConfig(t, map[string]string{
+		"Logger.BodyOffload.Enabled":        "true",
+		"Logger.BodyOffload.Provider":       "memory",
+		"Logger.BodyOffload.ThresholdBytes": "8",
+		"Logger.BodyOffload.Prefix":         "test/logs",
+	})
+
+	d := NewDefaultLogger().SetTitle("test-body-offload")
+	t.Cleanup(d.Stop)
+
+	doc := d.buildRemoteLogDoc(createRemoteLogDocArg{
+		logType: gaia.LogInType,
+		docBody: NewHTTPAccessLog(AccessDirectionInbound, HttpLogModel{
+			Url:            "/upload",
+			HttpMethod:     "POST",
+			HttpStatusCode: 200,
+			ReqBody:        strings.Repeat("r", 16),
+			RespBody:       strings.Repeat("s", 17),
+		}),
+		logLevel: gaia.LogInfoLevel,
+		content:  strings.Repeat("c", 18),
+	})
+
+	body, ok := doc.docBody.(AccessLogModel)
+	if !ok {
+		t.Fatalf("doc type = %T, want AccessLogModel", doc.docBody)
+	}
+	if !body.ContentOffloaded || !body.ReqBodyOffloaded || !body.RespBodyOffloaded {
+		t.Fatalf("offload flags not set: %+v", body)
+	}
+	if body.ContentObjectURL == "" || body.ReqBodyObjectURL == "" || body.RespBodyObjectURL == "" {
+		t.Fatalf("object urls not set: %+v", body)
+	}
+	if !strings.Contains(body.Content, "[offloaded field=content") ||
+		!strings.Contains(body.ReqBody, "[offloaded field=req_body") ||
+		!strings.Contains(body.RespBody, "[offloaded field=resp_body") {
+		t.Fatalf("fields were not replaced with placeholders: %+v", body)
+	}
+	if len(mem.data) != 3 {
+		t.Fatalf("uploaded object count = %d, want 3", len(mem.data))
+	}
+}
+
+func TestBuildRemoteLogDoc_OffloadFailureFallsBackToTruncate(t *testing.T) {
+	oldBuilder := newBodyOffloadStore
+	newBodyOffloadStore = func(provider string) (storage.ObjectStore, error) {
+		return nil, errTestObjectStoreUnavailable{}
+	}
+	t.Cleanup(func() {
+		newBodyOffloadStore = oldBuilder
+		resetBodyOffloadStoreForTest()
+	})
+	setBodyOffloadTestConfig(t, map[string]string{
+		"Logger.BodyOffload.Enabled":        "true",
+		"Logger.BodyOffload.Provider":       "memory",
+		"Logger.BodyOffload.ThresholdBytes": "8",
+	})
+
+	d := NewDefaultLogger().SetTitle("test-body-offload-fallback")
+	t.Cleanup(d.Stop)
+
+	doc := d.buildRemoteLogDoc(createRemoteLogDocArg{
+		logType: gaia.LogOutType,
+		docBody: NewHTTPAccessLog(AccessDirectionOutbound, HttpLogModel{
+			Url:            "/fallback",
+			HttpMethod:     "GET",
+			HttpStatusCode: 200,
+			ReqBody:        strings.Repeat("r", 16),
+		}),
+		logLevel: gaia.LogInfoLevel,
+		content:  strings.Repeat("c", 16),
+	})
+	body := doc.docBody.(AccessLogModel)
+	if body.ContentOffloaded || body.ReqBodyOffloaded {
+		t.Fatalf("unexpected offload flags: %+v", body)
+	}
+	if body.Content != "cccccccc...[truncated 8 bytes]" {
+		t.Fatalf("content fallback = %q", body.Content)
+	}
+	if body.ReqBody != "rrrrrrrr...[truncated 8 bytes]" {
+		t.Fatalf("req fallback = %q", body.ReqBody)
+	}
+}
+
+func setBodyOffloadTestConfig(t *testing.T, values map[string]string) {
+	t.Helper()
+	keys := []string{
+		"Logger.BodyOffload.Enabled",
+		"Logger.BodyOffload.Provider",
+		"Logger.BodyOffload.ThresholdBytes",
+		"Logger.BodyOffload.Prefix",
+		"Logger.BodyOffload.SignURLExpireSec",
+		"Logger.BodyOffload.UploadTimeoutSec",
+	}
+	for _, key := range keys {
+		gaia.InvalidateConfCache(key)
+	}
+	for key, value := range values {
+		t.Setenv(key, value)
+		gaia.InvalidateConfCache(key)
+	}
+	t.Cleanup(func() {
+		for _, key := range keys {
+			gaia.InvalidateConfCache(key)
+		}
+		resetBodyOffloadStoreForTest()
+	})
+	resetBodyOffloadStoreForTest()
+}
+
+func resetBodyOffloadStoreForTest() {
+	remoteBodyOffloadStore.mu.Lock()
+	defer remoteBodyOffloadStore.mu.Unlock()
+	remoteBodyOffloadStore.provider = ""
+	remoteBodyOffloadStore.store = nil
+	remoteBodyOffloadStore.lastErr = nil
+	remoteBodyOffloadStore.lastErrAt = time.Time{}
+	remoteBodyOffloadStore.lastLoaded = time.Time{}
+}
+
+type memoryObjectStore struct {
+	data map[string][]byte
+}
+
+func (m *memoryObjectStore) Put(_ context.Context, key string, data []byte) error {
+	cp := make([]byte, len(data))
+	copy(cp, data)
+	m.data[key] = cp
+	return nil
+}
+
+func (m *memoryObjectStore) Get(_ context.Context, key string) ([]byte, error) {
+	return m.data[key], nil
+}
+
+func (m *memoryObjectStore) Delete(_ context.Context, key string) error {
+	delete(m.data, key)
+	return nil
+}
+
+func (m *memoryObjectStore) Exists(_ context.Context, key string) (bool, error) {
+	_, ok := m.data[key]
+	return ok, nil
+}
+
+func (m *memoryObjectStore) List(context.Context, string, int) ([]storage.ObjectInfo, error) {
+	return nil, nil
+}
+
+func (m *memoryObjectStore) SignURL(_ context.Context, key string, _ time.Duration) (string, error) {
+	return "memory://" + key, nil
+}
+
+type errTestObjectStoreUnavailable struct{}
+
+func (errTestObjectStoreUnavailable) Error() string {
+	return "object store unavailable"
 }
