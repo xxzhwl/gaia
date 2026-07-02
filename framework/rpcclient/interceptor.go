@@ -36,6 +36,19 @@ func init() {
 
 func tracingInterceptor() grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		// 恢复 gaia TraceData 到 goroutine-local，供后续拦截器（logging/metrics）
+		// 从 GetContextTrace() 正确读到 trace_id / log_id。
+		switch {
+		case restoreGaiaTraceFromContext(ctx):
+			// context 中有 gaia TraceData，已恢复
+		case restoreGaiaTraceFromOTelSpan(ctx):
+			// 无 gaia TraceData 但有 OTel span context，取其 traceId 构建
+		default:
+			// 两者都没有，仍构建一个全新的（使日志保有 trace_id / log_id）
+			gaia.BuildContextTrace()
+		}
+		defer gaia.RemoveContextTrace()
+
 		tr := tracer.GetTracer()
 		if tr == nil {
 			// 即使未启用 OTel，也注入 gaia 链路信息，保证服务端日志 TraceId 续接
@@ -55,6 +68,32 @@ func tracingInterceptor() grpc.UnaryClientInterceptor {
 		}
 		return err
 	}
+}
+
+// restoreGaiaTraceFromContext 从标准 context.Context 中取出 gaia TraceData，
+// 恢复到当前 goroutine-local。成功返回 true。
+func restoreGaiaTraceFromContext(ctx context.Context) bool {
+	if td, ok := gaia.TraceDataFromContext(ctx); ok && td != nil {
+		gaia.ResetContextTraceByData(td)
+		return true
+	}
+	return false
+}
+
+// restoreGaiaTraceFromOTelSpan 在 context 中无 gaia TraceData 时，从 OTel span
+// context 提取 traceId 构建一个 gaia TraceData 恢复到 goroutine-local。
+// 这样即使调用方未挂载 gaia TraceData，日志仍能记录 trace_id（与 OTel 串联）。
+func restoreGaiaTraceFromOTelSpan(ctx context.Context) bool {
+	sc := oteltrace.SpanContextFromContext(ctx)
+	if !sc.IsValid() || !sc.TraceID().IsValid() {
+		return false
+	}
+	gaia.ResetContextTraceByData(&gaia.TraceData{
+		Id:      gaia.GetUUID(),
+		TraceId: sc.TraceID().String(),
+		KvData:  make(map[string]interface{}),
+	})
+	return true
 }
 
 // injectTraceContext 把 OTel span 上下文 + gaia 链路信息注入到 outgoing metadata。

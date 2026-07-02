@@ -168,7 +168,7 @@ func NewWithRuntime(runtime RuntimePort, opts ...Option) *Dispatcher {
 	d := &Dispatcher{
 		runtime:         runtime,
 		client:          gaiaHTTPClient{},
-		grpcInvoker:     newDirectGRPCInvoker(),
+		grpcInvoker:     newGRPCClientInvoker(),
 		alertHandler:    defaultAlertHandler{},
 		endpointGuard:   NewDefaultEndpointGuard(),
 		callbackBaseURL: "",
