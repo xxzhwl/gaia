@@ -52,18 +52,24 @@ func getServerMetrics() *grpcServerMetrics {
 		m.rec.RequestsTotal, err = meter.Int64Counter("rpc.server.requests.total",
 			metric.WithDescription("Total number of gRPC server requests by method and status code"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.rec.Duration, err = meter.Float64Histogram("rpc.server.duration",
 			metric.WithDescription("gRPC server handling duration in milliseconds"),
 			metric.WithUnit("ms"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.inFlight, err = meter.Int64UpDownCounter("rpc.server.in_flight",
 			metric.WithDescription("Number of in-flight gRPC server requests by method"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		serverMetrics = m
 	})

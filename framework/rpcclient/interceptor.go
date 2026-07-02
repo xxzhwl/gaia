@@ -314,12 +314,16 @@ func getClientMetrics() *grpcClientMetrics {
 		m.rec.RequestsTotal, err = meter.Int64Counter("rpc.client.requests.total",
 			metric.WithDescription("Total number of gRPC client requests by method and status code"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 		m.rec.Duration, err = meter.Float64Histogram("rpc.client.duration",
 			metric.WithDescription("gRPC client call duration in milliseconds"),
 			metric.WithUnit("ms"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 		clientMetrics = m
 	})
 	return clientMetrics

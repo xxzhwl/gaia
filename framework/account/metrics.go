@@ -5,9 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 )
 
 // AccountMetrics 持有账户模块的全部 Prometheus/OTel 指标。
@@ -93,85 +91,117 @@ func initAccountMetrics() *AccountMetrics {
 		m.LoginTotal, err = meter.Int64Counter("acct.auth.login.total",
 			metric.WithDescription("Total login attempts by status and reason"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.LoginDuration, err = meter.Float64Histogram("acct.auth.login.duration",
 			metric.WithDescription("Login processing time in milliseconds"),
 			metric.WithUnit("ms"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.RegisterTotal, err = meter.Int64Counter("acct.auth.register.total",
 			metric.WithDescription("Total registration attempts by status"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.TokenValidationTotal, err = meter.Int64Counter("acct.auth.token.validate.total",
 			metric.WithDescription("Token validation attempts by status and reason"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.TokenIssued, err = meter.Int64Counter("acct.auth.token.issued",
 			metric.WithDescription("Total tokens issued (access + refresh)"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.TokenReplay, err = meter.Int64Counter("acct.auth.token.replay",
 			metric.WithDescription("Refresh token replay attempts detected"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.TOTPReplay, err = meter.Int64Counter("acct.mfa.totp.replay",
 			metric.WithDescription("TOTP one-time code replay attempts detected (same/earlier time window reused)"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.StepUpGranted, err = meter.Int64Counter("acct.mfa.stepup.granted",
 			metric.WithDescription("Step-up MFA verifications that successfully marked the current session"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.StepUpDenied, err = meter.Int64Counter("acct.mfa.stepup.denied",
 			metric.WithDescription("Sensitive operations rejected because the current session has no valid step-up"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.PermissionDenied, err = meter.Int64Counter("acct.auth.permission.denied",
 			metric.WithDescription("Permission denied decisions"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.RiskBlocked, err = meter.Int64Counter("acct.risk.blocked",
 			metric.WithDescription("Login attempts blocked by risk assessment"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.DBError, err = meter.Int64Counter("acct.errors.db",
 			metric.WithDescription("Database operation errors"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.AuthMiddlewareDuration, err = meter.Float64Histogram("acct.auth.middleware.duration",
 			metric.WithDescription("Authentication middleware processing time in ms"),
 			metric.WithUnit("ms"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.AuthzCheckDuration, err = meter.Float64Histogram("acct.authz.check.duration",
 			metric.WithDescription("Authorization check processing time in ms"),
 			metric.WithUnit("ms"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.VerificationSendTotal, err = meter.Int64Counter("acct.verification.send.total",
 			metric.WithDescription("Verification code send attempts by channel, purpose and status"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.VerificationVerifyTotal, err = meter.Int64Counter("acct.verification.verify.total",
 			metric.WithDescription("Verification code verify attempts by channel, purpose and status"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		globalMetrics = m
 	})

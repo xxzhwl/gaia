@@ -23,13 +23,12 @@ import (
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
-
 	"github.com/xxzhwl/gaia"
 	"github.com/xxzhwl/gaia/framework"
 	"github.com/xxzhwl/gaia/framework/metrics"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 )
 
 // ============================================================================
@@ -95,24 +94,32 @@ func initHTTPMetrics() *httpServerMetrics {
 	m.RequestsTotal, err = meter.Int64Counter("http.server.requests.total",
 		metric.WithDescription("Total HTTP requests by method, route and status code"),
 	)
-	otel.Handle(err)
+	if err != nil {
+		otel.Handle(err)
+	}
 
 	m.RequestDuration, err = meter.Float64Histogram("http.server.request.duration",
 		metric.WithDescription("HTTP request processing time"),
 		metric.WithUnit("ms"),
 	)
-	otel.Handle(err)
+	if err != nil {
+		otel.Handle(err)
+	}
 
 	m.InFlight, err = meter.Int64UpDownCounter("http.server.in_flight",
 		metric.WithDescription("Number of in-flight HTTP requests"),
 	)
-	otel.Handle(err)
+	if err != nil {
+		otel.Handle(err)
+	}
 
 	m.ResponseSize, err = meter.Int64Histogram("http.server.response.size",
 		metric.WithDescription("HTTP response body size in bytes"),
 		metric.WithUnit("By"),
 	)
-	otel.Handle(err)
+	if err != nil {
+		otel.Handle(err)
+	}
 
 	return m
 }

@@ -9,9 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 )
 
 // JobMetricLabel 为 jobs 指标提供统一的标签键。
@@ -89,77 +87,113 @@ func GetJobsMetrics() *JobsMetrics {
 
 		m.JobExecTotal, err = meter.Int64Counter("jobs.exec.total",
 			metric.WithDescription("Cron job execution events by status"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.JobExecDuration, err = meter.Float64Histogram("jobs.exec.duration",
 			metric.WithDescription("Cron job execution duration in milliseconds"),
 			metric.WithUnit("ms"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.JobPanicTotal, err = meter.Int64Counter("jobs.panic.total",
 			metric.WithDescription("Cron job panic events"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.JobTimeoutTotal, err = meter.Int64Counter("jobs.timeout.total",
 			metric.WithDescription("Cron job timeout events"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.JobSkipTotal, err = meter.Int64Counter("jobs.skip.total",
 			metric.WithDescription("Cron job skipped because previous run still in progress"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.UpdateScanTotal, err = meter.Int64Counter("jobs.update_scan.total",
 			metric.WithDescription("Jobs DB sync loop scans"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.UpdateScanDuration, err = meter.Float64Histogram("jobs.update_scan.duration",
 			metric.WithDescription("Jobs DB sync loop duration"),
 			metric.WithUnit("ms"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.UpdateScanError, err = meter.Int64Counter("jobs.update_scan.error.total",
 			metric.WithDescription("Jobs DB sync loop errors"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.DBErrorTotal, err = meter.Int64Counter("jobs.db.error.total",
 			metric.WithDescription("Jobs DB operation errors"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.AlarmFired, err = meter.Int64Counter("jobs.alarm.fired.total",
 			metric.WithDescription("Jobs alarms actually fired"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.AlarmSuppressed, err = meter.Int64Counter("jobs.alarm.suppressed.total",
 			metric.WithDescription("Jobs alarms suppressed by throttle/dedupe"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.LeaseAcquireTotal, err = meter.Int64Counter("jobs.lease.acquire.total",
 			metric.WithDescription("Jobs HA lease acquire attempts"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.LeaseAcquiredTotal, err = meter.Int64Counter("jobs.lease.acquired.total",
 			metric.WithDescription("Jobs HA lease successfully acquired"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.LeaseMissedTotal, err = meter.Int64Counter("jobs.lease.missed.total",
 			metric.WithDescription("Jobs HA lease missed (taken by other instance)"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.LeaseRenewTotal, err = meter.Int64Counter("jobs.lease.renew.total",
 			metric.WithDescription("Jobs HA lease renewed"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.LeaseRenewLost, err = meter.Int64Counter("jobs.lease.renew.lost.total",
 			metric.WithDescription("Jobs HA lease lost during renew (taken by other instance)"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.LoadedServiceJobs, err = meter.Int64ObservableGauge("jobs.loaded.service",
 			metric.WithDescription("Currently loaded cron service jobs"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.LoadedHookJobs, err = meter.Int64ObservableGauge("jobs.loaded.hook",
 			metric.WithDescription("Currently loaded cron hook jobs"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		_, err = meter.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
 			m.observeProvidersMu.Lock()
@@ -171,7 +205,9 @@ func GetJobsMetrics() *JobsMetrics {
 			}
 			return nil
 		}, m.LoadedServiceJobs, m.LoadedHookJobs)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		jobsMetricsGlobal = m
 	})

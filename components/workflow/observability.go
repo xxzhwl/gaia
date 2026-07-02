@@ -60,28 +60,40 @@ func GetWorkflowMetrics() *WorkflowMetrics {
 
 		m.OperationTotal, err = meter.Int64Counter("workflow.operation.total",
 			metric.WithDescription("Workflow engine operation calls by operation and status"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.OperationDuration, err = meter.Float64Histogram("workflow.operation.duration",
 			metric.WithDescription("Workflow engine operation duration in milliseconds"),
 			metric.WithUnit("ms"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.SLATimeoutTotal, err = meter.Int64Counter("workflow.sla.timeout.total",
 			metric.WithDescription("Workflow SLA timeout events detected by ScanTimeoutTasks"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.OutboxBacklog, err = meter.Int64ObservableGauge("workflow.outbox.backlog",
 			metric.WithDescription("Workflow outbox events not yet completed (NEW, FAILED, PROCESSING)"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.OutboxDeadLetters, err = meter.Int64ObservableGauge("workflow.outbox.dead_letters",
 			metric.WithDescription("Workflow outbox events in DEAD status"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.InstanceStatus, err = meter.Int64ObservableGauge("workflow.instance.status.count",
 			metric.WithDescription("Workflow process instance count by status"))
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		_, err = meter.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
 			m.providersMu.Lock()
@@ -103,7 +115,9 @@ func GetWorkflowMetrics() *WorkflowMetrics {
 			}
 			return nil
 		}, m.OutboxBacklog, m.OutboxDeadLetters, m.InstanceStatus)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		workflowMetricsGlobal = m
 	})

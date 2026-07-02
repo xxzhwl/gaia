@@ -9,9 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 )
 
 // MetricLabel 为 asynctask 指标提供统一的标签键，避免散落字符串。
@@ -96,102 +94,140 @@ func GetMetrics() *AsyncTaskMetrics {
 		m.TaskExecTotal, err = meter.Int64Counter("asynctask.exec.total",
 			metric.WithDescription("Async task execution attempts by status"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.TaskExecDuration, err = meter.Float64Histogram("asynctask.exec.duration",
 			metric.WithDescription("Async task execution duration in milliseconds"),
 			metric.WithUnit("ms"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.TaskWaitDuration, err = meter.Float64Histogram("asynctask.wait.duration",
 			metric.WithDescription("Async task wait duration from create to first run in milliseconds"),
 			metric.WithUnit("ms"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.TaskRetryTotal, err = meter.Int64Counter("asynctask.retry.total",
 			metric.WithDescription("Async task retry events"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.TaskPanicTotal, err = meter.Int64Counter("asynctask.panic.total",
 			metric.WithDescription("Async task panic events"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.ScanTotal, err = meter.Int64Counter("asynctask.scan.total",
 			metric.WithDescription("Scheduler DB scan attempts"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.ScanDuration, err = meter.Float64Histogram("asynctask.scan.duration",
 			metric.WithDescription("Scheduler DB scan duration in milliseconds"),
 			metric.WithUnit("ms"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.QueueDropTotal, err = meter.Int64Counter("asynctask.queue.drop.total",
 			metric.WithDescription("Tasks dropped because in-memory queue is full"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.QueueWaitMillis, err = meter.Float64Histogram("asynctask.queue.wait",
 			metric.WithDescription("Time a task waits in the in-memory queue before being pulled"),
 			metric.WithUnit("ms"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.WorkerScaleUp, err = meter.Int64Counter("asynctask.worker.scale_up.total",
 			metric.WithDescription("Worker scale up events"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.WorkerScaleDown, err = meter.Int64Counter("asynctask.worker.scale_down.total",
 			metric.WithDescription("Worker scale down events"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.HeartbeatDeadDetected, err = meter.Int64Counter("asynctask.heartbeat.dead.total",
 			metric.WithDescription("Tasks recovered because heartbeat is dead"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.DBErrorTotal, err = meter.Int64Counter("asynctask.db.error.total",
 			metric.WithDescription("Database operation errors"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.AlarmFired, err = meter.Int64Counter("asynctask.alarm.fired.total",
 			metric.WithDescription("Alarms actually fired"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.AlarmSuppressed, err = meter.Int64Counter("asynctask.alarm.suppressed.total",
 			metric.WithDescription("Alarms suppressed by throttle/dedupe"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		// Observable gauges 通过 callback 异步采样所有 scheduler 的状态
 		m.QueueDepth, err = meter.Int64ObservableGauge("asynctask.queue.depth",
 			metric.WithDescription("Current depth of the in-memory task queue"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.QueueCapacity, err = meter.Int64ObservableGauge("asynctask.queue.capacity",
 			metric.WithDescription("Capacity of the in-memory task queue"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.WorkerTotal, err = meter.Int64ObservableGauge("asynctask.worker.total",
 			metric.WithDescription("Total worker goroutines"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		m.WorkerRunning, err = meter.Int64ObservableGauge("asynctask.worker.running",
 			metric.WithDescription("Running worker goroutines"),
 		)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		_, err = meter.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
 			m.observeProvidersMu.Lock()
@@ -203,7 +239,9 @@ func GetMetrics() *AsyncTaskMetrics {
 			}
 			return nil
 		}, m.QueueDepth, m.QueueCapacity, m.WorkerTotal, m.WorkerRunning)
-		otel.Handle(err)
+		if err != nil {
+			otel.Handle(err)
+		}
 
 		asyncMetricsGlobal = m
 	})
