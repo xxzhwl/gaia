@@ -5,7 +5,9 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 )
 
 // AccountMetrics 持有账户模块的全部 Prometheus/OTel 指标。
