@@ -34,9 +34,9 @@ const (
 
 type PreHandlerFunc func() error
 
-type PostHandlerFunc func(taskId int64) error
+type PostHandlerFunc func() error
 
-type AlarmHandlerFunc func(taskId int64, message string) error
+type AlarmHandlerFunc func() error
 
 var SchedulerMap = make(map[string]*Scheduler)
 

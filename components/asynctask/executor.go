@@ -15,6 +15,13 @@ import (
 	"github.com/xxzhwl/gaia/framework/logImpl"
 )
 
+const (
+	ExecutorTaskIdCtxKey      = "ExecutorTaskIdCtxKey"
+	ExecutorTaskStatusCtxKey  = "ExecutorTaskStatusCtxKey"
+	ExecutorTaskSuccessCtxKey = "ExecutorTaskSuccessCtxKey"
+	ExecutorTaskErrMsgCtxKey  = "ExecutorTaskErrMsgCtxKey"
+)
+
 // Executor 执行器
 type Executor struct {
 	TaskId       int64
@@ -58,7 +65,16 @@ func (e *Executor) WithAlarmHandler(handler AlarmHandlerFunc) *Executor {
 // Run 执行器执行任务
 func (e *Executor) Run() bool {
 	gaia.BuildContextTrace()
+	defer gaia.RemoveContextTrace()
+	tc := gaia.NewContextTrace()
+	if err := tc.SetKvData(ExecutorTaskIdCtxKey, e.TaskId); err != nil {
+		e.Logger.Error(err.Error())
+	}
+
 	now := time.Now()
+	ok := false
+	finalStatus := TaskStatusFailed.String()
+	finalErrMsg := ""
 	//业务执行之前的失败，是可以重试的
 	model, err := getTaskById(e.TaskId, e.Ctx)
 	if err != nil {
@@ -79,7 +95,6 @@ func (e *Executor) Run() bool {
 	}
 
 	e.TaskInfo = model
-
 	// 触发 OnTaskStart Hook
 	e.fireStartHook(now)
 
@@ -96,45 +111,60 @@ func (e *Executor) Run() bool {
 		msg := fmt.Sprintf("[%s-%s-%s]执行错误:%s", e.TaskInfo.SystemName, e.TaskInfo.ServiceName,
 			e.TaskInfo.MethodName, err.Error())
 		e.Logger.Error(msg)
+		finalErrMsg = msg
 		isPanic := strings.HasPrefix(err.Error(), "RunPanic:")
 		if isPanic {
 			recordPanic(e.Ctx, e.theme(), "run")
 		}
 		// 失败时若仍有重试次数，则置为 Retry，等待下一轮调度；否则置为 Failed
 		if e.TaskInfo.MaxRetryTime >= e.TaskInfo.RetryTime+1 {
+			finalStatus = TaskStatusRetry.String()
 			updateTaskRetry(e.TaskInfo, msg, now, e.Ctx)
 			recordRetry(e.Ctx, e.theme())
 			e.recordPostExec(now, TaskStatusRetry.String(), msg, isPanic)
 		} else {
+			finalStatus = TaskStatusFailed.String()
 			updateTaskFailed(e.TaskInfo.Id, msg, now, e.Ctx)
 			e.recordPostExec(now, TaskStatusFailed.String(), msg, isPanic)
 		}
-		return false
 	} else {
 		marshal, err := json.Marshal(res)
 		if err != nil {
 			msg := fmt.Sprintf("[%s-%s-%s]结果序列化错误:%s", e.TaskInfo.SystemName, e.TaskInfo.ServiceName,
 				e.TaskInfo.MethodName, err.Error())
 			e.Logger.Error(msg)
+			finalErrMsg = msg
+			finalStatus = TaskStatusFailed.String()
 			updateTaskFailed(e.TaskInfo.Id, msg, now, e.Ctx)
 			e.recordPostExec(now, TaskStatusFailed.String(), msg, false)
-			return false
+		} else {
+			// 业务成功：直接置为 Success（不再因 MaxRetryTime > 0 而被错误地置为 Retry）
+			ok = true
+			finalStatus = TaskStatusSuccess.String()
+			updateTaskSuccess(e.TaskInfo.Id, string(marshal), now, e.Ctx)
+			e.recordPostExec(now, TaskStatusSuccess.String(), "", false)
 		}
-		// 业务成功：直接置为 Success（不再因 MaxRetryTime > 0 而被错误地置为 Retry）
-		updateTaskSuccess(e.TaskInfo.Id, string(marshal), now, e.Ctx)
-		e.recordPostExec(now, TaskStatusSuccess.String(), "", false)
 	}
 
+	if err := tc.SetKvData(ExecutorTaskStatusCtxKey, finalStatus); err != nil {
+		e.Logger.Error(err.Error())
+	}
+	if err := tc.SetKvData(ExecutorTaskSuccessCtxKey, ok); err != nil {
+		e.Logger.Error(err.Error())
+	}
+	if finalErrMsg != "" {
+		if err := tc.SetKvData(ExecutorTaskErrMsgCtxKey, finalErrMsg); err != nil {
+			e.Logger.Error(err.Error())
+		}
+	}
 	if err := e.postRun(); err != nil {
 		msg := fmt.Sprintf("[%s-%s-%s]后处理错误:%s", e.TaskInfo.SystemName, e.TaskInfo.ServiceName,
 			e.TaskInfo.MethodName, err.Error())
 		e.Logger.Error(msg)
-		updateTaskFailed(e.TaskInfo.Id, msg, now, e.Ctx)
-		return false
 	}
 	e.Logger.InfoF("[%s-%s-%s]执行完成", e.TaskInfo.SystemName, e.TaskInfo.ServiceName, e.TaskInfo.MethodName)
-	gaia.RemoveContextTrace()
-	return true
+
+	return ok
 }
 
 // theme 返回当前任务所属的 scheduler theme（asynctask 中等同 SystemName）。
@@ -249,7 +279,7 @@ func (e *Executor) postRun() (err error) {
 		}
 	}()
 
-	return e.PostHandler(e.TaskInfo.Id)
+	return e.PostHandler()
 }
 
 func (e *Executor) run() (res any, err error) {
@@ -274,7 +304,7 @@ func (e *Executor) run() (res any, err error) {
 		return nil, fmt.Errorf("[%s-%s]获取Proxy为Nil", e.TaskInfo.SystemName, e.TaskInfo.ServiceName)
 	}
 
-	return gaia.CallMethodWithJSONArgs(proxy, e.TaskInfo.MethodName, []byte(e.TaskInfo.Arg))
+	return gaia.CallMethodWithJSONArgsContext(e.Ctx, proxy, e.TaskInfo.MethodName, []byte(e.TaskInfo.Arg))
 }
 
 func (e *Executor) heartBeat(ctx context.Context) {

@@ -4,10 +4,12 @@
 package gaia
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 )
 
 // GetCallbackFunc 从object(支持值和指针类型)中动态获取一个可执行的方法，会尝试获取该对象下的指针方法和普通值方法
@@ -33,8 +35,14 @@ import (
 // 2. 如果在被调起的函数的实现过程中不需要共享属性值，则注册时传入指针类型，提升结构体的复用性
 func GetCallbackFunc(object any, method string, errmsg string) (fm reflect.Value, err error) {
 	fv := reflect.ValueOf(object)
+	if !fv.IsValid() {
+		return reflect.Value{}, errors.New(errmsg)
+	}
 	var ptr, value reflect.Value
 	if fv.Kind() == reflect.Ptr {
+		if fv.IsNil() {
+			return reflect.Value{}, fmt.Errorf("callback object %s is nil", fv.Type())
+		}
 		ptr = fv
 		value = ptr.Elem()
 	} else {
@@ -127,6 +135,22 @@ func CallMethodWithArgs(service any, methodName string, args ...any) (any, error
 // 1. JSON 数组：["arg1", "arg2", 123] - 会被展开为多个参数
 // 2. 空数组：[] - 无参数调用
 func CallMethodWithJSONArgs(service any, methodName string, jsonArgs []byte) (any, error) {
+	return callMethodWithJSONArgs(context.Background(), service, methodName, jsonArgs, false, true)
+}
+
+// CallMethodWithJSONArgsContext 从 JSON 字节数组解析参数并调用方法。
+//
+// 当目标方法的第一个参数实现 context.Context 时，本函数会自动注入 ctx；
+// 其余 JSON 参数规则与 CallMethodWithJSONArgs 保持一致。该函数适合 asynctask
+// 一类框架执行器调用同时支持 workflow MethodCatalog 的 context 签名。
+func CallMethodWithJSONArgsContext(ctx context.Context, service any, methodName string, jsonArgs []byte) (any, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return callMethodWithJSONArgs(ctx, service, methodName, jsonArgs, true, false)
+}
+
+func callMethodWithJSONArgs(ctx context.Context, service any, methodName string, jsonArgs []byte, injectContext bool, emptyObjectAsNoArgs bool) (any, error) {
 	if service == nil {
 		return nil, fmt.Errorf("service is nil")
 	}
@@ -138,36 +162,39 @@ func CallMethodWithJSONArgs(service any, methodName string, jsonArgs []byte) (an
 	}
 
 	methodArgLength := fm.Type().NumIn()
+	argOffset := 0
+	if injectContext && methodArgLength > 0 && fm.Type().In(0).Implements(contextType()) {
+		argOffset = 1
+	}
 
-	if len(jsonArgs) == 0 || string(jsonArgs) == "[]" || string(jsonArgs) == "{}" {
-		if methodArgLength != 0 {
-			return nil, fmt.Errorf("the length of method's args does not match[%d-%d]", methodArgLength, 0)
+	args, err := parseJSONCallArgs(jsonArgs, emptyObjectAsNoArgs)
+	if err != nil {
+		return nil, err
+	}
+	if len(args) == 1 && methodArgLength-argOffset == 0 && isEmptyJSONObject(jsonArgs) {
+		args = nil
+	}
+	if len(args) == 0 {
+		if methodArgLength-argOffset != 0 {
+			return nil, fmt.Errorf("the length of method's args does not match[%d-%d]", methodArgLength-argOffset, 0)
+		}
+		if argOffset == 1 {
+			return call(methodName, fm, []reflect.Value{reflect.ValueOf(ctx)})
 		}
 		return call(methodName, fm, nil)
 	}
 
-	var rawArgs any
-	if err := json.Unmarshal(jsonArgs, &rawArgs); err != nil {
-		return nil, fmt.Errorf("json unmarshal args error: %s", err.Error())
+	if methodArgLength-argOffset != len(args) {
+		return nil, fmt.Errorf("the length of method's args does not match[%d-%d]", methodArgLength-argOffset, len(args))
 	}
 
-	var args []any
-	switch v := rawArgs.(type) {
-	case []interface{}:
-		args = v
-	case map[string]interface{}:
-		args = []any{v}
-	default:
-		args = []any{v}
+	values := make([]reflect.Value, methodArgLength)
+	if argOffset == 1 {
+		values[0] = reflect.ValueOf(ctx)
 	}
-
-	if methodArgLength != len(args) {
-		return nil, fmt.Errorf("the length of method's args does not match[%d-%d]", methodArgLength, len(args))
-	}
-
-	values := make([]reflect.Value, len(args))
 	for i, arg := range args {
-		pType := fm.Type().In(i)
+		valueIndex := i + argOffset
+		pType := fm.Type().In(valueIndex)
 		stctPointer := reflect.New(pType).Interface()
 
 		var bytesData []byte
@@ -187,10 +214,37 @@ func CallMethodWithJSONArgs(service any, methodName string, jsonArgs []byte) (an
 			}
 		}
 
-		values[i] = reflect.ValueOf(stctPointer).Elem()
+		values[valueIndex] = reflect.ValueOf(stctPointer).Elem()
 	}
 
 	return call(methodName, fm, values)
+}
+
+func parseJSONCallArgs(jsonArgs []byte, emptyObjectAsNoArgs bool) ([]any, error) {
+	trimmed := strings.TrimSpace(string(jsonArgs))
+	if trimmed == "" || trimmed == "[]" || (emptyObjectAsNoArgs && trimmed == "{}") {
+		return nil, nil
+	}
+	var rawArgs any
+	if err := json.Unmarshal(jsonArgs, &rawArgs); err != nil {
+		return nil, fmt.Errorf("json unmarshal args error: %s", err.Error())
+	}
+	switch v := rawArgs.(type) {
+	case []interface{}:
+		return v, nil
+	case map[string]interface{}:
+		return []any{v}, nil
+	default:
+		return []any{v}, nil
+	}
+}
+
+func isEmptyJSONObject(jsonArgs []byte) bool {
+	return strings.TrimSpace(string(jsonArgs)) == "{}"
+}
+
+func contextType() reflect.Type {
+	return reflect.TypeOf((*context.Context)(nil)).Elem()
 }
 
 // 回调结果处理
@@ -224,7 +278,13 @@ func getResult(methodName string, outFv []reflect.Value) (interface{}, error) {
 	return outFv[0].Interface(), retErr
 }
 
-func call(methodName string, value reflect.Value, args []reflect.Value) (any, error) {
+func call(methodName string, value reflect.Value, args []reflect.Value) (result any, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = nil
+			err = fmt.Errorf("%s panic: %v", methodName, r)
+		}
+	}()
 	res := value.Call(args)
 	return getResult(methodName, res)
 }

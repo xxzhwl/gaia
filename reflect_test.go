@@ -4,9 +4,11 @@
 package gaia
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/xxzhwl/gaia/cvt"
+	"strings"
 	"testing"
 )
 
@@ -41,6 +43,31 @@ func (t *testCase) Case5(arg1, arg2 Case2Arg) (map[string]any, error) {
 
 func (t *testCase) Case6(arg1, arg2 Case2Arg) error {
 	return errors.New("这是一个错误")
+}
+
+type jsonCallInput struct {
+	OrderID string `json:"orderId"`
+}
+
+type jsonCallCase struct{}
+
+func (t *jsonCallCase) WithContext(ctx context.Context, input jsonCallInput) (map[string]any, error) {
+	return map[string]any{
+		"orderId": input.OrderID,
+		"traceId": ctx.Value("traceId"),
+	}, nil
+}
+
+func (t *jsonCallCase) ObjectArg(input jsonCallInput) string {
+	return input.OrderID
+}
+
+func (t *jsonCallCase) NoArg() string {
+	return "ok"
+}
+
+func (t *jsonCallCase) Panic() {
+	panic("boom")
 }
 
 func TestCallMethodWithArgs(t *testing.T) {
@@ -109,5 +136,54 @@ func TestCallMethodWithArgs(t *testing.T) {
 			}
 			PrettyPrint(got)
 		})
+	}
+}
+
+func TestCallMethodWithJSONArgsContextInjectsContext(t *testing.T) {
+	ctx := context.WithValue(context.Background(), "traceId", "trace-1")
+	got, err := CallMethodWithJSONArgsContext(ctx, &jsonCallCase{}, "WithContext", []byte(`{"orderId":"O-1"}`))
+	if err != nil {
+		t.Fatalf("CallMethodWithJSONArgsContext() error = %v", err)
+	}
+	output := got.(map[string]any)
+	if output["orderId"] != "O-1" || output["traceId"] != "trace-1" {
+		t.Fatalf("unexpected output: %#v", output)
+	}
+}
+
+func TestCallMethodWithJSONArgsContextTreatsEmptyObjectAsArgument(t *testing.T) {
+	got, err := CallMethodWithJSONArgsContext(context.Background(), &jsonCallCase{}, "ObjectArg", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("CallMethodWithJSONArgsContext() error = %v", err)
+	}
+	if got != "" {
+		t.Fatalf("expected zero-value object arg, got %#v", got)
+	}
+
+	got, err = CallMethodWithJSONArgs(&jsonCallCase{}, "NoArg", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("CallMethodWithJSONArgs() should keep empty-object no-arg compatibility: %v", err)
+	}
+	if got != "ok" {
+		t.Fatalf("unexpected legacy no-arg result: %#v", got)
+	}
+
+	got, err = CallMethodWithJSONArgsContext(context.Background(), &jsonCallCase{}, "NoArg", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("CallMethodWithJSONArgsContext() should keep empty-object no-arg compatibility: %v", err)
+	}
+	if got != "ok" {
+		t.Fatalf("unexpected context no-arg result: %#v", got)
+	}
+}
+
+func TestCallMethodWithJSONArgsRejectsNilAndRecoversPanic(t *testing.T) {
+	var nilService *jsonCallCase
+	if _, err := CallMethodWithJSONArgs(nilService, "NoArg", nil); err == nil || !strings.Contains(err.Error(), "nil") {
+		t.Fatalf("expected typed nil service error, got %v", err)
+	}
+
+	if _, err := CallMethodWithJSONArgs(&jsonCallCase{}, "Panic", nil); err == nil || !strings.Contains(err.Error(), "panic: boom") {
+		t.Fatalf("expected panic to be recovered as error, got %v", err)
 	}
 }

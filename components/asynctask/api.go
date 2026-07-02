@@ -68,6 +68,18 @@ func GetTaskStatus(taskId int64) (string, error) {
 	return task.TaskStatus, nil
 }
 
+// GetTask 查询任务详情。
+func GetTask(taskId int64) (TaskModel, error) {
+	task, err := getTaskById(taskId, context.Background())
+	if err != nil {
+		return TaskModel{}, err
+	}
+	if task.Id == 0 {
+		return TaskModel{}, fmt.Errorf("task %d not found", taskId)
+	}
+	return task, nil
+}
+
 // IsTaskDone 判断任务是否已完成。
 func IsTaskDone(taskId int64) (bool, error) {
 	status, err := GetTaskStatus(taskId)

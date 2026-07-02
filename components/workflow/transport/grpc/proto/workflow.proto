@@ -1,0 +1,446 @@
+syntax = "proto3";
+
+package gaia.workflow.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/xxzhwl/gaia/components/workflow/transport/grpc/proto;workflowpb";
+
+service WorkflowService {
+  rpc CreateDefinition(ProcessDefinitionRequest) returns (ProcessDefinition);
+  rpc UpdateDefinition(UpdateDefinitionRequest) returns (ProcessDefinition);
+  rpc DeployDefinition(ProcessDefinition) returns (ProcessDefinition);
+  rpc GetDefinition(GetDefinitionRequest) returns (ProcessDefinition);
+  rpc ListDefinitions(ListDefinitionsRequest) returns (ProcessDefinitionPage);
+  rpc DisableDefinition(GetDefinitionRequest) returns (ProcessDefinition);
+  rpc EnableDefinition(GetDefinitionRequest) returns (ProcessDefinition);
+
+  rpc StartProcess(StartProcessRequest) returns (ProcessInstance);
+  rpc GetInstance(GetInstanceRequest) returns (ProcessInstance);
+  rpc ListInstances(ListInstancesRequest) returns (ProcessInstancePage);
+  rpc TerminateInstance(InstanceLifecycleRequest) returns (ProcessInstance);
+  rpc SuspendInstance(InstanceLifecycleRequest) returns (ProcessInstance);
+  rpc ResumeInstance(InstanceLifecycleRequest) returns (ProcessInstance);
+
+  rpc ListTasks(ListTasksRequest) returns (TaskPage);
+  rpc InstanceTasks(GetInstanceRequest) returns (TaskList);
+  rpc Variables(GetInstanceRequest) returns (VariablesResponse);
+  rpc VariablesByNames(VariableNamesRequest) returns (VariablesResponse);
+  rpc UpdateVariables(UpdateVariablesRequest) returns (VariablesResponse);
+  rpc DeleteVariables(VariableNamesRequest) returns (VariablesResponse);
+  rpc SystemVariables(GetInstanceRequest) returns (InstanceSystemVariables);
+  rpc Timeline(GetInstanceRequest) returns (AuditEventList);
+  rpc CompleteTask(CompleteTaskRequest) returns (ProcessInstance);
+  rpc FailTask(FailTaskRequest) returns (ProcessInstance);
+  rpc RetryTask(RetryTaskRequest) returns (Task);
+  rpc ClaimTask(TaskOperationRequest) returns (Task);
+  rpc UnclaimTask(TaskOperationRequest) returns (Task);
+  rpc TransferTask(TaskOperationRequest) returns (Task);
+  rpc DelegateTask(TaskOperationRequest) returns (Task);
+  rpc RejectTask(TaskOperationRequest) returns (ProcessInstance);
+  rpc ScanTimeoutTasks(ScanTimeoutTasksRequest) returns (ScanTimeoutTasksResult);
+
+  rpc Outbox(OutboxRequest) returns (OutboxEventPage);
+  rpc PurgeOutbox(PurgeOutboxRequest) returns (PurgeOutboxResponse);
+
+  rpc RegisterAutomationService(AutomationService) returns (AutomationService);
+  rpc UnregisterAutomationService(AutomationServiceID) returns (DeleteResponse);
+  rpc ListAutomationServices(EmptyRequest) returns (AutomationServiceList);
+  rpc ListAutomationTasks(EmptyRequest) returns (AutomationTaskList);
+}
+
+service AutomationWorkerService {
+  rpc DispatchTask(DispatchTaskRequest) returns (DispatchTaskResponse);
+  rpc Health(EmptyRequest) returns (HealthResponse);
+}
+
+message EmptyRequest {}
+
+message PageRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
+message ProcessDefinitionRequest {
+  ProcessDefinition definition = 1;
+}
+
+message UpdateDefinitionRequest {
+  string definition_id = 1;
+  ProcessDefinition definition = 2;
+}
+
+message GetDefinitionRequest {
+  string definition_id = 1;
+}
+
+message ListDefinitionsRequest {
+  PageRequest page = 1;
+  string key = 2;
+  string name = 3;
+  string status = 4;
+}
+
+message ProcessDefinitionPage {
+  repeated ProcessDefinition list = 1;
+  int64 total = 2;
+}
+
+message ProcessDefinition {
+  string id = 1;
+  string key = 2;
+  string name = 3;
+  int32 version = 4;
+  string status = 5;
+  WorkflowModel model = 6;
+  repeated InputParameter inputs = 7;
+  string created_by = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp deployed_at = 10;
+  int32 edit_version = 11;
+}
+
+message InputParameter {
+  string key = 1;
+  string name = 2;
+  string type = 3;
+  bool required = 4;
+  google.protobuf.Value default_value = 5;
+}
+
+message WorkflowModel {
+  map<string, Node> nodes = 1;
+  repeated SequenceFlow sequence_flows = 2;
+}
+
+message Node {
+  string id = 1;
+  string type = 2;
+  string name = 3;
+  repeated InputMapping input_mappings = 4;
+  repeated string output_variables = 5;
+  string endpoint = 6;
+  string automation_service_id = 7;
+  string automation_task_key = 8;
+  string assignee_expression = 9;
+  int32 timeout_seconds = 10;
+  RetryPolicy retry_policy = 11;
+  SLAPolicy sla_policy = 12;
+}
+
+message InputMapping {
+  string parameter = 1;
+  string expression = 2;
+}
+
+message RetryPolicy {
+  int32 max_attempts = 1;
+  int32 backoff_seconds = 2;
+}
+
+message SLAPolicy {
+  string action = 1;
+  string operator = 2;
+  string reason = 3;
+  google.protobuf.Struct variables = 4;
+}
+
+message SequenceFlow {
+  string id = 1;
+  string name = 2;
+  string source_ref = 3;
+  string target_ref = 4;
+  string condition = 5;
+  bool default = 6;
+}
+
+message StartProcessRequest {
+  string definition_key = 1;
+  int32 definition_version = 2;
+  string business_key = 3;
+  string tenant_id = 4;
+  string starter = 5;
+  google.protobuf.Struct variables = 6;
+}
+
+message GetInstanceRequest {
+  string instance_id = 1;
+}
+
+message ListInstancesRequest {
+  PageRequest page = 1;
+  string definition_key = 2;
+  string status = 3;
+  string tenant_id = 4;
+}
+
+message InstanceLifecycleRequest {
+  string instance_id = 1;
+  string operator = 2;
+  string reason = 3;
+}
+
+message ProcessInstancePage {
+  repeated ProcessInstance list = 1;
+  int64 total = 2;
+}
+
+message ProcessInstance {
+  string id = 1;
+  string definition_id = 2;
+  string definition_key = 3;
+  int32 definition_version = 4;
+  string business_key = 5;
+  string tenant_id = 6;
+  string status = 7;
+  google.protobuf.Timestamp start_time = 8;
+  google.protobuf.Timestamp end_time = 9;
+  string starter = 10;
+  string end_node_id = 11;
+  string fail_reason = 12;
+  int32 version = 13;
+}
+
+message ListTasksRequest {
+  PageRequest page = 1;
+  string instance_id = 2;
+  string status = 3;
+  string type = 4;
+  string assignee = 5;
+  string tenant_id = 6;
+}
+
+message TaskPage {
+  repeated Task list = 1;
+  int64 total = 2;
+}
+
+message TaskList {
+  repeated Task list = 1;
+}
+
+message Task {
+  string id = 1;
+  string instance_id = 2;
+  string activity_instance_id = 3;
+  string node_id = 4;
+  string title = 5;
+  string type = 6;
+  string status = 7;
+  string assignee = 8;
+  string owner = 9;
+  google.protobuf.Struct variable_snapshot = 10;
+  string action = 11;
+  string comment = 12;
+  string completed_by = 13;
+  string delegated_from = 14;
+  string dispatch_url = 15;
+  string callback_token = 16;
+  google.protobuf.Timestamp timeout_at = 17;
+  google.protobuf.Timestamp claimed_at = 18;
+  int32 retry_count = 19;
+  google.protobuf.Timestamp created_at = 20;
+  google.protobuf.Timestamp completed_at = 21;
+}
+
+message CompleteTaskRequest {
+  string task_id = 1;
+  string operator = 2;
+  string action = 3;
+  string comment = 4;
+  google.protobuf.Struct variables = 5;
+  string callback_token = 6;
+}
+
+message FailTaskRequest {
+  string task_id = 1;
+  string operator = 2;
+  string error_code = 3;
+  string message = 4;
+  bool retryable = 5;
+  google.protobuf.Struct variables = 6;
+  string callback_token = 7;
+  string worker_task_id = 8;
+}
+
+message RetryTaskRequest {
+  string task_id = 1;
+  string operator = 2;
+  string reason = 3;
+}
+
+message TaskOperationRequest {
+  string task_id = 1;
+  string operator = 2;
+  string target_assignee = 3;
+  string action = 4;
+  string comment = 5;
+  google.protobuf.Struct variables = 6;
+}
+
+message ScanTimeoutTasksRequest {
+  google.protobuf.Timestamp now = 1;
+  int32 limit = 2;
+}
+
+message ScanTimeoutTasksResult {
+  int32 scanned = 1;
+  int32 timed_out = 2;
+  repeated OutboxEvent events = 3;
+}
+
+message VariablesResponse {
+  map<string, Variable> variables = 1;
+}
+
+message VariableNamesRequest {
+  string instance_id = 1;
+  repeated string names = 2;
+}
+
+message UpdateVariablesRequest {
+  string instance_id = 1;
+  google.protobuf.Struct variables = 2;
+  string operator = 3;
+}
+
+message InstanceSystemVariables {
+  string instance_id = 1;
+  string definition_id = 2;
+  string definition_key = 3;
+  string definition_name = 4;
+  int32 definition_version = 5;
+  string instance_name = 6;
+  string tenant_id = 7;
+  string starter = 8;
+  google.protobuf.Timestamp start_time = 9;
+}
+
+message Variable {
+  string instance_id = 1;
+  string name = 2;
+  string type = 3;
+  google.protobuf.Value value = 4;
+  string scope = 5;
+  string updated_by_node_id = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message AuditEventList {
+  repeated AuditEvent list = 1;
+}
+
+message AuditEvent {
+  string id = 1;
+  string instance_id = 2;
+  string event_type = 3;
+  string node_id = 4;
+  string task_id = 5;
+  google.protobuf.Struct payload = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message OutboxRequest {
+  PageRequest page = 1;
+  string event_type = 2;
+  string status = 3;
+}
+
+message PurgeOutboxRequest {
+  int32 limit = 1;
+}
+
+message PurgeOutboxResponse {
+  int64 purged = 1;
+}
+
+message OutboxEventPage {
+  repeated OutboxEvent list = 1;
+  int64 total = 2;
+}
+
+message OutboxEvent {
+  string id = 1;
+  string event_type = 2;
+  string aggregate_id = 3;
+  google.protobuf.Struct payload = 4;
+  string status = 5;
+  int32 retry_count = 6;
+  google.protobuf.Timestamp next_retry_at = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+message AutomationServiceID {
+  string service_id = 1;
+}
+
+message DeleteResponse {
+  bool deleted = 1;
+}
+
+message AutomationServiceList {
+  repeated AutomationService list = 1;
+}
+
+message AutomationTaskList {
+  repeated AutomationTask list = 1;
+}
+
+message AutomationService {
+  string id = 1;
+  string name = 2;
+  string base_url = 3;
+  string health_url = 4;
+  string protocol = 5;
+  string version = 6;
+  repeated string tags = 7;
+  repeated AutomationTask tasks = 8;
+  google.protobuf.Timestamp registered_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+  int32 ttl_seconds = 11;
+}
+
+message AutomationTask {
+  string service_id = 1;
+  string key = 2;
+  string name = 3;
+  string description = 4;
+  string method = 5;
+  string endpoint = 6;
+  repeated AutomationParameter input_schema = 7;
+  repeated AutomationParameter output_schema = 8;
+}
+
+message AutomationParameter {
+  string key = 1;
+  string name = 2;
+  string type = 3;
+  bool required = 4;
+  google.protobuf.Value default_value = 5;
+  string description = 6;
+}
+
+message DispatchTaskRequest {
+  string task_id = 1;
+  string process_instance_id = 2;
+  string node_id = 3;
+  string automation_task_key = 4;
+  google.protobuf.Struct variables = 5;
+  string callback_url = 6;
+  string callback_token = 7;
+  string fail_callback_url = 8;
+  string dispatch_mode = 9;
+}
+
+message DispatchTaskResponse {
+  string task_id = 1;
+  string process_instance_id = 2;
+  string node_id = 3;
+  bool completed = 4;
+  google.protobuf.Struct variables = 5;
+}
+
+message HealthResponse {
+  google.protobuf.Struct data = 1;
+}
